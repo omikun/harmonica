@@ -1,21 +1,19 @@
 Todo List:
-  . Create register files/issue logic
-    - No need for a forwarding network or hazard detection. This is all handled
-      by scoreboarding.
-    - Must perform writeback in a single cycle to avoid need for forwarding
-      (then forwarding can all be internal to the register file).
-    - Remember to forward through register (and valid bit) files appropriately.
-  . Create functional unit interface
-  . Create a basic ALU functional unit
-  . Create writeback logic
-  _ Create selective functional unit stall logic.
-      - Say 2 FUs finish their op at the same time. Stall the one that doesn't
-        get to write back.
-  . Create branch determination logic
-  _ Add forwarding to accelerate critical loops.
+  _ Add support for jalr/jali
+    - This is tricky because there is currently no way to get the PC to the
+      functional units. Another entry in the fuInput structure may be neces-
+      sary, (as well as perhaps a pipeline register to carry pc from fetch to
+      decode/issue).
+  _ Add forwarding logic.
     - The basic problem is that decode-execute requires at least 2 cycles, but
       we have enough information in the decode stage that we could forward the
-      value from writeback to execute in the next cycle.
-  . Create a basic load/store unit
-    - Just a simple SRAM with no MMU for now.
-  _ Create a FxPU/FPU
+      value from writeback to execute at the beginning of the next cycle.
+  _ Add branch prediction
+  _ Create a load/store unit that interfaces to a cache.
+  _ Create an integer multiplication and division unit.
+  _ Create a pipelined FxPU or FPU.
+  _ Add kernel mode.
+  _ Add support for interrupts/exceptions (including shadow register file).
+  _ Add support for multiple SIMD lanes.
+  _ Write a test app. Likely to be most fun: SIMD mandelbrot zoomer with text
+    graphics output.

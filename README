@@ -7,3 +7,6 @@ Status/Features:
   --
 
 Instructions implemented (with opcode):
+  04 neg     06 not     07 and     08 or      o9 xor     oa add     0b sub
+  0f shl     10 shr     11 andi    12 ori     13 xori    14 addi    15 subi
+  19 shli    1a shri    1d jmpi    1e jmpr
