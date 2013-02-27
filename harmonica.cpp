@@ -69,8 +69,8 @@ template <unsigned N> bvec<N> InstructionMemory(bvec<N> addr) {
   PipelineBubble(0, stallctr == Lit<4>(9));
   DBGTAP(stallctr);
 
-  bvec<LOG2ROMSZ-2> a(addr[range<2, LOG2ROMSZ-1>()]);
-  return PipelineReg(0, LLRom<LOG2ROMSZ-2, N>(a, "rom.hex"));
+  bvec<LOG2ROMSZ-CLOG2(N/8)> a(addr[range<CLOG2(N/8), LOG2ROMSZ-1>()]);
+  return PipelineReg(0, LLRom<LOG2ROMSZ-CLOG2(N/8), N>(a, "rom.hex"));
 }
 
 template<unsigned N, unsigned R> struct harmonica {
@@ -211,6 +211,7 @@ template<unsigned N, unsigned R> struct harmonica {
     DBGTAP(fustall);
 
     // Determine taken jump
+    DBGTAP(inst.is_jmp());
     takenJmp = !GetStall(1) && px && inst.is_jmp();
     jmpPc = Mux(inst.has_imm(), r0value, pc_d + inst.get_imm());
     PipelineFlush(1, brMispred);
@@ -304,7 +305,9 @@ int main() {
 
   pipeline.generate();
 
+  #ifndef DEBUG
   optimize();
+  #endif
 
   // Do the simulation
   ofstream wave_file("harmonica.vcd");
