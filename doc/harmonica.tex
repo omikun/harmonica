@@ -1,0 +1,66 @@
+\documentclass[10pt,twocolumn]{article}
+\title{The Harmonica Processor Core}
+\author{Chad Kersey}
+
+%\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+
+\begin{document}
+\maketitle
+
+\begin{figure*}
+\begin{center}
+\includegraphics[width=6in]{fig/arch}
+\caption{Block diagram of the Harmonica microarchitecture. The set of functiona\
+l units is arbitrary.}
+\label{fig:arch}
+\end{center}
+\end{figure*}
+
+
+\section{Microarchitecture}
+Harmonica is an in-order, pipelined implementation of a significant subset of the Harp instruction set architectures supporting out-of-order instruction completion.
+It is a parameterized implementation with variable width, variable register file dimensions, and interchangeable functional units.
+
+The Harmonica pipeline can be divided into four phases:
+\begin{itemize}
+  \item Instruction Fetch
+  \item Instruction Decode/Issue
+  \item Execution
+  \item Writeback
+\end{itemize}
+
+Fetch, Issue, and Writeback each require a single cycle.
+Execution time can vary depending on the functional unit design.
+
+
+\subsection{Instruction Identifiers (IIDs)}
+A small register, large enough to contain a number uniquely identifying each fetched instruction still within the pipeline, is contained in the fetch stage.
+This number, the Instruction Identifier (IID), uniquely describes each instruction in the pipeline.
+They are used in the writeback stage to ensure that only the most recently-issued instruction writing to a register will influence its value.
+This enables out-of-order completion of instructions as long as issue remains in-order.
+
+Fetch, Issue, and Writeback each require a single cycle.
+Execution time can vary depending on the functional unit design.
+
+\section{Functional Units}
+
+The functional units are implemented in \texttt{funcunit.h}.
+Inputs to the functional units are of type \texttt{fuInput} and outputs are of type \texttt{fuOutput}.
+The set of opcodes provided by a functional unit are provided (as a vector of \texttt{unsigned int}s by a member function called \texttt{get\_opcodes()}.
+
+\subsection{Arithmetic Logic Unit}
+
+\texttt{BasicAlu} is a simple ALU implementation, supporting all common integer arithmetic and logic functions involving registers and immediates which can be handled in a single cycle.
+The sole exceptions are multiplication and division.
+
+\subsection{Predicate Logic Unit}
+
+\texttt{PredLu} performs all predicate operations, including predicate logic and conversions from register vales to predicate values.
+
+\subsection{Load/Store Unit}
+
+Only a simple LSU, \texttt{SramLsu}, has been implemented so far.
+This is a very simple unit with a single cycle latency, storing all data in a (configurable size, but usually tiny) synchronous SRAM.
+
+\end{document}

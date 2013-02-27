@@ -1,0 +1,9 @@
+Harmonica - HARP core implementation
+
+Harmonica is an exploratory pipelined HARP implementation with a modular archi-
+tecture.
+
+Status/Features:
+  --
+
+Instructions implemented (with opcode):

@@ -1,0 +1,21 @@
+Todo List:
+  . Create register files/issue logic
+    - No need for a forwarding network or hazard detection. This is all handled
+      by scoreboarding.
+    - Must perform writeback in a single cycle to avoid need for forwarding
+      (then forwarding can all be internal to the register file).
+    - Remember to forward through register (and valid bit) files appropriately.
+  . Create functional unit interface
+  . Create a basic ALU functional unit
+  . Create writeback logic
+  _ Create selective functional unit stall logic.
+      - Say 2 FUs finish their op at the same time. Stall the one that doesn't
+        get to write back.
+  . Create branch determination logic
+  _ Add forwarding to accelerate critical loops.
+    - The basic problem is that decode-execute requires at least 2 cycles, but
+      we have enough information in the decode stage that we could forward the
+      value from writeback to execute in the next cycle.
+  . Create a basic load/store unit
+    - Just a simple SRAM with no MMU for now.
+  _ Create a FxPU/FPU
