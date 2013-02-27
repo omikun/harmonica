@@ -107,32 +107,6 @@ template<unsigned N, unsigned R> struct harmonica {
     node wrmem_d(inst.is_store());
 
     // // // Registers/Scheduling // // //
-    // Register files:
-    //  - Predicate register file
-    //    - Writeback
-    //    - Read val 1
-    //    - Read val 2
-    //    - Read pred
-    //  - Predicate valid bits      \
-    //    - Read val 1 valid         |
-    //    - Read val 2 valid         |
-    //    - Clear                    |
-    //    - Set                      +--Predicate scoreboard
-    //  - Predicate writer IID bits  |
-    //    - Write port (issue)       |
-    //    - Read (for writeback)    /
-    //  - GPR file
-    //    - Write
-    //    - Read 1
-    //    - Read 2
-    //    - Read 3
-    //  - GPR valid bits           \
-    //    - Read val 1 valid        |
-    //    - Read val 2 valid        |
-    //  - GPR writer IID bits       +--GPR Scoreboard
-    //    - Write port (issue)      |
-    //    - Read (writeback)       /
-
     // Predicate register file
     node predvalue, px, p0value, p0valid, p1value, p1valid, p_wb_val, p_wb,
          predvalid;
@@ -210,6 +184,7 @@ template<unsigned N, unsigned R> struct harmonica {
     vec<8, fuInput<N, R>> fuin;
     bvec<8> fustall;
     for (unsigned i = 0; i < 8; ++i) {
+      fuin[i].pc = PipelineReg(2, PipelineReg(1, pc + Lit<N>(N/8)));
       fuin[i].r0 = PipelineReg(2, r0value);
       fuin[i].r1 = PipelineReg(2, r1value);
       fuin[i].r2 = PipelineReg(2, r2value);

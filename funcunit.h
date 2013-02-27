@@ -25,7 +25,7 @@
 static const unsigned IDLEN(6);
 
 template <unsigned N, unsigned R> struct fuInput {
-  chdl::bvec<N> r0, r1, r2, imm;
+  chdl::bvec<N> r0, r1, r2, imm, pc;
   chdl::node p0, p1, hasimm, stall, pdest;
   chdl::bvec<6> op;
   chdl::bvec<IDLEN> iid;
@@ -58,7 +58,7 @@ template <unsigned N, unsigned R> class BasicAlu : public FuncUnit<N, R> {
 
     for (unsigned i = 0x05; i <= 0x0b; ++i) ops.push_back(i); // 0x05 - 0x0b
     for (unsigned i = 0x0f; i <= 0x15; ++i) ops.push_back(i); // 0x0f - 0x15
-    for (unsigned i = 0x19; i <= 0x1a; ++i) ops.push_back(i); // 0x19 - 0x1a
+    for (unsigned i = 0x19; i <= 0x1c; ++i) ops.push_back(i); // 0x19 - 0x1c
     ops.push_back(0x25);
 
     return ops;
@@ -91,6 +91,8 @@ template <unsigned N, unsigned R> class BasicAlu : public FuncUnit<N, R> {
     mux_in[0x15] = sum;
     mux_in[0x19] = mux_in[0x0f];
     mux_in[0x1a] = mux_in[0x10];
+    mux_in[0x1b] = in.pc;
+    mux_in[0x1c] = in.pc;
     mux_in[0x25] = b;
 
     node w(!in.stall);

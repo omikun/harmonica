@@ -7,8 +7,7 @@ entry:    ldi    %r0, #0;
 loop:     shli   %r3, %r0, #2;
           st     %r1, %r3, #0;
           subi   %r2, %r1, #10;
-          addi   %r0, %r0, #1;
-          addi   %r1, %r1, #1;
+          jali   %r4, subroutine;
           iszero @p1, %r2;
     @p1 ? jmpi   sumthem;
           jmpi   loop;
@@ -21,3 +20,8 @@ theloop:  ld     %r3, %r0, #0;
           rtop   @p0, %r3;
     @p0 ? jmpi   theloop;
 finished: jmpi   finished;
+
+subroutine:
+          addi   %r0, %r0, #1;
+          addi   %r1, %r1, #1;
+          jmpr   %r4;
