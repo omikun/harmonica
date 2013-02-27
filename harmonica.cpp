@@ -315,5 +315,7 @@ int main() {
 
   // Print the netlist
   ofstream netlist_file("harmonica.nand");
+  #ifndef DEBUG
   print_netlist(netlist_file);
+  #endif
 }
