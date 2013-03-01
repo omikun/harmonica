@@ -20,11 +20,13 @@
 #include <chdl/sim.h>
 #include <chdl/netlist.h>
 
+#include <chdl/analysis.h>
+
 #include "pipeline.h"
 #include "funcunit.h"
 
-const unsigned LOG2WIDTH(5), WIDTH(1<<LOG2WIDTH), REGS(8),
-               LOG2ROMSZ(7), RAMSZ(256), IIDBITS(6);
+const unsigned WIDTH(32), LOG2WIDTH(CLOG2(WIDTH)), REGS(8),
+               ROMSZ(128), LOG2ROMSZ(CLOG2(ROMSZ)), RAMSZ(128), IIDBITS(6);
 
 #define DEBUG
 //#define WITH_FPU  // Floating point
@@ -305,9 +307,9 @@ int main() {
 
   pipeline.generate();
 
-  #ifndef DEBUG
+  //#ifndef DEBUG
   optimize();
-  #endif
+  //#endif
 
   // Do the simulation
   ofstream wave_file("harmonica.vcd");
@@ -318,4 +320,7 @@ int main() {
   #ifndef DEBUG
   print_netlist(netlist_file);
   #endif
+
+  // Do some metrics
+  cout << "Critical path length: " << critpath() << endl;
 }

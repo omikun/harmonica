@@ -33,7 +33,6 @@ The Harmonica pipeline can be divided into four phases:
 Fetch, Issue, and Writeback each require a single cycle.
 Execution time can vary depending on the functional unit design.
 
-
 \subsection{Instruction Identifiers (IIDs)}
 A small register, large enough to contain a number uniquely identifying each fetched instruction still within the pipeline, is contained in the fetch stage.
 This number, the Instruction Identifier (IID), uniquely describes each instruction in the pipeline.
@@ -42,6 +41,11 @@ This enables out-of-order completion of instructions as long as issue remains in
 
 Fetch, Issue, and Writeback each require a single cycle.
 Execution time can vary depending on the functional unit design.
+
+\subsection{Parameterizability}
+Architecture parameters, such as the number of registers and the width of the datapath, are all software configurable.
+At the top of \texttt{harmonica.cpp} a set of constants is defined, describing the instruction set parameters.
+Between these constants and the configurable set of functional units, Harmonica can be reconfigured for specific applications.
 
 \section{Functional Units}
 
@@ -62,5 +66,9 @@ The sole exceptions are multiplication and division.
 
 Only a simple LSU, \texttt{SramLsu}, has been implemented so far.
 This is a very simple unit with a single cycle latency, storing all data in a (configurable size, but usually tiny) synchronous SRAM.
+
+\section{Performance}
+The prototype scheduling logic has a critical path length of 68 NAND gates.
+Without technology mapping or placement/routing, it is difficult to say how this translates to delays in terms of FO4, but assuming each NAND gate has a delay on the order of ten picoseconds leads to a clock frequency on the order of one gigahertz.
 
 \end{document}

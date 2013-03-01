@@ -2,6 +2,7 @@ CXX = g++-4.7
 CXXFLAGS = -std=c++11 -O3
 LDLIBS = -lchdl
 ARCH = 4w8/8/1
+#ARCH = 8w32/32/1
 
 #dump.vcd : harmonica-vl
 #	./harmonica-vl
@@ -26,6 +27,8 @@ pipeline.o  : pipeline.cpp pipeline.h
 
 rom.hex : rom.bin
 	hexdump -v -e '1/4 "%08x" "\n"' rom.bin > rom.hex
+#	hexdump -v -e '2/4 "%08x " "\n"' rom.bin | \
+#          sed 's/\([0-9a-f]*\) \([0-9a-f]*\)/\2\1/' > rom.hex
 
 rom.bin : rom.HOF
 	harptool -L --arch $(ARCH) -o rom.bin rom.HOF
