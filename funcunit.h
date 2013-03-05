@@ -24,34 +24,39 @@
 
 static const unsigned IDLEN(6);
 
-template <unsigned N, unsigned R> struct fuInput {
-  chdl::bvec<N> r0, r1, r2, imm, pc;
-  chdl::node p0, p1, hasimm, stall, pdest;
+template <unsigned N, unsigned R, unsigned L> struct fuInput {
+  chdl::bvec<N> imm, pc;
+  chdl::vec<L, chdl::bvec<N>> r0, r1, r2;
+  chdl::bvec<L> p0, p1;
+  chdl::node hasimm, stall, pdest;
+
   chdl::bvec<6> op;
   chdl::bvec<IDLEN> iid;
   chdl::bvec<CLOG2(R)> didx;
 };
 
-template <unsigned N, unsigned R> struct fuOutput {
-  chdl::bvec<N> out;
+template <unsigned N, unsigned R, unsigned L> struct fuOutput {
+  chdl::vec<L, chdl::bvec<N>> out;
   chdl::bvec<IDLEN> iid;
   chdl::node valid, pdest;
   chdl::bvec<CLOG2(R)> didx;
 };
 
-template <unsigned N, unsigned R> class FuncUnit {
+template <unsigned N, unsigned R, unsigned L> class FuncUnit {
  public:
   FuncUnit() {}
 
   virtual std::vector<unsigned> get_opcodes() = 0;
 
-  virtual fuOutput<N, R> generate(fuInput<N, R> in, chdl::node valid) = 0;
+  virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) = 0;
   virtual chdl::node ready() { return chdl::Lit(1); } // Output is ready.
 };
 
 // Functional unit with 1-cycle latency supporting all common arithmetic/logic
 // instructions.
-template <unsigned N, unsigned R> class BasicAlu : public FuncUnit<N, R> {
+template <unsigned N, unsigned R, unsigned L>
+  class BasicAlu : public FuncUnit<N, R, L>
+{
  public:
   std::vector<unsigned> get_opcodes() {
     std::vector<unsigned> ops;
@@ -64,39 +69,42 @@ template <unsigned N, unsigned R> class BasicAlu : public FuncUnit<N, R> {
     return ops;
   }
 
-  virtual fuOutput<N, R> generate(fuInput<N, R> in, chdl::node valid) {
+  virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) {
     using namespace std;
     using namespace chdl;
 
-    fuOutput<N, R> o;
-
-    bvec<N> a(in.r0), b(Mux(in.hasimm, in.r1, in.imm));
-
-    bvec<N> sum(Adder(a, Mux(in.op[0], b, ~b), in.op[0]));
-
-    vec<64, bvec<N>> mux_in;
-    mux_in[0x05] = -a;
-    mux_in[0x06] = ~a;
-    mux_in[0x07] = a & b;
-    mux_in[0x08] = a | b;
-    mux_in[0x09] = a ^ b;
-    mux_in[0x0a] = sum;
-    mux_in[0x0b] = sum;
-    mux_in[0x0f] = a << Zext<CLOG2(N)>(b);
-    mux_in[0x10] = a >> Zext<CLOG2(N)>(b);
-    mux_in[0x11] = mux_in[0x07];
-    mux_in[0x12] = mux_in[0x08];
-    mux_in[0x13] = mux_in[0x09];
-    mux_in[0x14] = sum;
-    mux_in[0x15] = sum;
-    mux_in[0x19] = mux_in[0x0f];
-    mux_in[0x1a] = mux_in[0x10];
-    mux_in[0x1b] = in.pc;
-    mux_in[0x1c] = in.pc;
-    mux_in[0x25] = b;
-
+    fuOutput<N, R, L> o;
     node w(!in.stall);
-    o.out = Wreg(w, Mux(in.op, mux_in));
+
+    for (unsigned i = 0; i < L; ++i) {
+      bvec<N> a(in.r0[i]), b(Mux(in.hasimm, in.r1[i], in.imm));
+
+      bvec<N> sum(Adder(a, Mux(in.op[0], b, ~b), in.op[0]));
+
+      vec<64, bvec<N>> mux_in;
+      mux_in[0x05] = -a;
+      mux_in[0x06] = ~a;
+      mux_in[0x07] = a & b;
+      mux_in[0x08] = a | b;
+      mux_in[0x09] = a ^ b;
+      mux_in[0x0a] = sum;
+      mux_in[0x0b] = sum;
+      mux_in[0x0f] = a << Zext<CLOG2(N)>(b);
+      mux_in[0x10] = a >> Zext<CLOG2(N)>(b);
+      mux_in[0x11] = mux_in[0x07];
+      mux_in[0x12] = mux_in[0x08];
+      mux_in[0x13] = mux_in[0x09];
+      mux_in[0x14] = sum;
+      mux_in[0x15] = sum;
+      mux_in[0x19] = mux_in[0x0f];
+      mux_in[0x1a] = mux_in[0x10];
+      mux_in[0x1b] = in.pc;
+      mux_in[0x1c] = in.pc;
+      mux_in[0x25] = b;
+
+      o.out[i] = Wreg(w, Mux(in.op, mux_in));
+    }
+
     o.valid = Wreg(w, valid);
     o.iid = Wreg(w, in.iid);
     o.didx = Wreg(w, in.didx);
@@ -113,9 +121,12 @@ template <unsigned N, unsigned R> class BasicAlu : public FuncUnit<N, R> {
   chdl::node isReady;
 };
 
+#if 0
 // Predicate logic unit. All of the predicate/predicate and register/predicate
 // instructions.
-template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
+template <unsigned N, unsigned R, unsigned L>
+ class PredLu : public FuncUnit<N, R, L>
+{
  public:
   std::vector<unsigned> get_opcodes() {
     std::vector<unsigned> ops;
@@ -125,11 +136,11 @@ template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
     return ops;
   }
 
-  virtual fuOutput<N, R> generate(fuInput<N, R> in, chdl::node valid) {
+  virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) {
     using namespace std;
     using namespace chdl;
 
-    fuOutput<N, R> o;
+    fuOutput<N, R, L> o;
 
     bvec<N> r0(in.r0);
     node p0(in.p0), p1(in.p1);
@@ -161,8 +172,8 @@ template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
 };
 
 // Integrated SRAM load/store unit with no MMU
-template <unsigned N, unsigned R, unsigned SIZE>
-  class SramLsu : public FuncUnit<N, R>
+template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
+  class SramLsu : public FuncUnit<N, R, L>
 {
  public:
   std::vector<unsigned> get_opcodes() {
@@ -174,13 +185,13 @@ template <unsigned N, unsigned R, unsigned SIZE>
     return ops;
   }
 
-  virtual fuOutput<N, R> generate(fuInput<N, R> in, chdl::node valid) {
+  virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) {
     const unsigned L2WORDS(CLOG2(SIZE/(N/8)));
 
     using namespace std;
     using namespace chdl;
 
-    fuOutput<N, R> o;
+    fuOutput<N, R, L> o;
 
     bvec<6> op(in.op);
     bvec<N> r0(in.r0), r1(in.r1), imm(in.imm),
@@ -201,5 +212,6 @@ template <unsigned N, unsigned R, unsigned SIZE>
   }
  private:
 };
+#endif
 
 #endif
