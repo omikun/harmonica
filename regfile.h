@@ -40,7 +40,7 @@ template <unsigned M, unsigned N, unsigned R, unsigned L>
 }
 
 // Valid bit file (2^M entry, 1 set port, 1 clear port, R-read-port)
-template <unsigned M, unsigned R, unsigned L>
+template <unsigned M, unsigned R>
   void Bitfile(vec<R, rdport<M, 1, 1>> r, 
                bvec<M> set_idx, node set, bvec<M> clear_idx, node clear,
                string prefix = "")
