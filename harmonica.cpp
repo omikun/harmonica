@@ -26,7 +26,8 @@
 #include "funcunit.h"
 
 const unsigned WIDTH(32), LOG2WIDTH(CLOG2(WIDTH)), REGS(8),
-               ROMSZ(128), LOG2ROMSZ(CLOG2(ROMSZ)), RAMSZ(128), IIDBITS(6);
+               ROMSZ(128), LOG2ROMSZ(CLOG2(ROMSZ)), RAMSZ(128), IIDBITS(6),
+               LANES(8);
 
 #define DEBUG
 //#define WITH_FPU  // Floating point
@@ -75,21 +76,30 @@ template <unsigned N> bvec<N> InstructionMemory(bvec<N> addr) {
   return PipelineReg(0, LLRom<LOG2ROMSZ-CLOG2(N/8), N>(a, "rom.hex"));
 }
 
-template<unsigned N, unsigned R> struct harmonica {
+template <unsigned N> vec<N, bvec<1>> contort(bvec<N> x) {
+  vec<N, bvec<1>> r;
+  for (unsigned i = 0; i < N; ++i) r[i][0] = x[i];
+  return r;
+}
+
+vec<1, bvec<1>> contort(node x) { return contort(bvec<1>(x)); }
+
+template<unsigned N, unsigned R, unsigned L> struct harmonica {
   harmonica() {}
   ~harmonica() {
     for (size_t i = 0; i < funcUnits.size(); ++i) delete funcUnits[i];
   }
 
-  void addFuncUnit(FuncUnit<N, R> *fu) { funcUnits.push_back(fu); }
+  void addFuncUnit(FuncUnit<N, R, L> *fu) { funcUnits.push_back(fu); }
 
   void generate() {
     // // // Fetch  Unit // // //
     bvec<IIDBITS> iid;
     bvec<N> pc, jmpPc;
-    node takenJmp, validInst(GetValid(0)), brMispred;
+    node takenJmp, validInst(GetValid(0)), brMispred,
+         bpStall(GetStall(0) || !validInst);
     iid = Reg(Mux(GetStall(0), iid + Lit<IIDBITS>(1), iid));
-    pc = Reg(BranchPredict<2>(brMispred, pc, GetStall(0) || !validInst, jmpPc, takenJmp));
+    pc = Reg(BranchPredict<2>(brMispred, pc, bpStall, jmpPc, takenJmp));
     DBGTAP(pc);
     DBGTAP(iid);
     DBGTAP(validInst);
@@ -110,33 +120,36 @@ template<unsigned N, unsigned R> struct harmonica {
 
     // // // Registers/Scheduling // // //
     // Predicate register file
-    node predvalue, px, p0value, p0valid, p1value, p1valid, p_wb_val, p_wb,
-         predvalid;
+    bvec<L> px, predvalue, p0value, p1value, p_wb_val, p_wb;
+    node p0valid, p1valid, predvalid;
     bvec<CLOG2(R)> p_wb_idx;
     bvec<IIDBITS> p_wb_iid, p_wb_curiid;
-    vec<3, rdport<CLOG2(R), 1>> prf_rd;
-    prf_rd[0] = rdport<CLOG2(R), 1>(inst.get_psrc0(), bvec<1>(p0value));
-    prf_rd[1] = rdport<CLOG2(R), 1>(inst.get_psrc1(), bvec<1>(p1value));
-    prf_rd[2] = rdport<CLOG2(R), 1>(inst.get_pred(), bvec<1>(predvalue));
-    wrport<CLOG2(R), 1> prf_wr(p_wb_idx, bvec<1>(p_wb_val), p_wb);
+
+    vec<3, rdport<CLOG2(R), 1, L>> prf_rd;
+    prf_rd[0] = rdport<CLOG2(R), 1, L>(inst.get_psrc0(), contort(p0value));
+    prf_rd[1] = rdport<CLOG2(R), 1, L>(inst.get_psrc1(), contort(p1value));
+    prf_rd[2] = rdport<CLOG2(R), 1, L>(inst.get_pred(), contort(predvalue));
+    wrport<CLOG2(R), 1, L> prf_wr(p_wb_idx, contort(p_wb_val), p_wb);
     Regfile(prf_rd, prf_wr, "p");
 
-    px = validInst_d && (!inst.has_pred() || predvalue);
+    px = bvec<L>(validInst_d) & (bvec<L>(!inst.has_pred()) | predvalue);
 
     DBGTAP(predvalue);
     DBGTAP(predvalid);
     DBGTAP(px);    
 
     // Predicate valid bits
-    node wrpred_d(px && inst.has_pdst() && !GetStall(1));
-    vec<3, rdport<CLOG2(R), 1> > pvb_rd;
-    pvb_rd[0] = rdport<CLOG2(R), 1>(inst.get_psrc0(), bvec<1>(p0valid));
-    pvb_rd[1] = rdport<CLOG2(R), 1>(inst.get_psrc1(), bvec<1>(p1valid));
-    pvb_rd[2] = rdport<CLOG2(R), 1>(inst.get_pred(), bvec<1>(predvalid));
-    Bitfile(pvb_rd, p_wb_idx, p_wb, inst.get_pdst(), wrpred_d, "p");
+    node wrpred_d(OrN(px) && inst.has_pdst() && !GetStall(1));
+    vec<3, rdport<CLOG2(R), 1, 1> > pvb_rd;
+    pvb_rd[0] = rdport<CLOG2(R), 1, 1>(inst.get_psrc0(), contort(p0valid));
+    pvb_rd[1] = rdport<CLOG2(R), 1, 1>(inst.get_psrc1(), contort(p1valid));
+    pvb_rd[2] = rdport<CLOG2(R), 1, 1>(inst.get_pred(), contort(predvalid));
+    Bitfile(pvb_rd, p_wb_idx, OrN(p_wb), inst.get_pdst(), wrpred_d, "p");
     PipelineBubble(2, inst.has_psrc0() && !p0valid);
     PipelineBubble(2, inst.has_psrc1() && !p1valid);
     PipelineBubble(2, inst.has_pred() && !predvalid);
+
+#if 0
 
     // Predicate writer IID bits
     vec<1, rdport<CLOG2(R), IIDBITS> > piid_rd;
@@ -183,27 +196,30 @@ template<unsigned N, unsigned R> struct harmonica {
     wrport<CLOG2(R), IIDBITS> riid_wr(inst.get_rdst(), iid_d, wrreg_d);
     Regfile(riid_rd, riid_wr, "riid");
 
-    vec<8, fuInput<N, R>> fuin;
+    vec<8, fuInput<N, R, L>> fuin;
     bvec<8> fustall;
     for (unsigned i = 0; i < 8; ++i) {
       fuin[i].pc = PipelineReg(2, PipelineReg(1, pc + Lit<N>(N/8)));
-      fuin[i].r0 = PipelineReg(2, r0value);
-      fuin[i].r1 = PipelineReg(2, r1value);
-      fuin[i].r2 = PipelineReg(2, r2value);
       fuin[i].imm = PipelineReg(2, inst.get_imm());
-      fuin[i].p0 = PipelineReg(2, p0value);
-      fuin[i].p1 = PipelineReg(2, p1value);
       fuin[i].hasimm = PipelineReg(2, inst.has_imm());
       fuin[i].iid = PipelineReg(2, iid_d);
       fuin[i].op = PipelineReg(2, inst.get_opcode());
       fuin[i].didx = PipelineReg(2, inst.get_rdst());
       fuin[i].pdest = PipelineReg(2, inst.has_pdst());
       fuin[i].stall = fustall[i];
+
+      for (unsigned j = 0; i < L; ++j) {
+        fuin[i].r0[j] = PipelineReg(2, r0value[j]);
+        fuin[i].r1[j] = PipelineReg(2, r1value[j]);
+        fuin[i].r2[j] = PipelineReg(2, r2value[j]);
+        fuin[i].p0[j] = PipelineReg(2, p0value[j]);
+        fuin[i].p1[j] = PipelineReg(2, p1value[j]);
+      }
     }
 
-    DBGTAP(fuin[0].r0);
-    DBGTAP(fuin[0].r1);
-    DBGTAP(fuin[0].r2);
+    DBGTAP(fuin[0].r0[0]);
+    DBGTAP(fuin[0].r1[0]);
+    DBGTAP(fuin[0].r2[0]);
     DBGTAP(fuin[0].imm);
     DBGTAP(fuin[0].p0);
     DBGTAP(fuin[0].p1);
@@ -214,10 +230,12 @@ template<unsigned N, unsigned R> struct harmonica {
 
     // Determine taken jump
     DBGTAP(inst.is_jmp());
-    takenJmp = !GetStall(1) && px && inst.is_jmp();
-    jmpPc = Mux(inst.has_imm(), r0value, pc_d + inst.get_imm());
+    node brdiv(inst.is_jmp() && OrN(px) && !AndN(px));
+    takenJmp = !GetStall(1) && px[0] && inst.is_jmp();
+    jmpPc = Mux(inst.has_imm(), r0value[0], pc_d + inst.get_imm());
     PipelineFlush(1, brMispred);
 
+    DBGTAP(brdiv);
     DBGTAP(takenJmp);
 
     // // // Functional Units // // //
@@ -234,7 +252,7 @@ template<unsigned N, unsigned R> struct harmonica {
     }
 
     // Attach the inputs and outputs
-    vec<8, fuOutput<N, R>> fuout;
+    vec<8, fuOutput<N, R, L>> fuout;
     bvec<8> fu_issue, fu_notready;
     for (unsigned i = 0; i < funcUnits.size(); ++i) {
       fu_issue[i] = PipelineReg(2, fu_sel[i]);
@@ -292,18 +310,18 @@ template<unsigned N, unsigned R> struct harmonica {
 
     // Generate hazard unit/pipeline regs.
     genPipelineRegs();
+    #endif
   }  
 
-
-  vector<FuncUnit<N, R>*> funcUnits;
+  vector<FuncUnit<N, R, L>*> funcUnits;
 };
 
 int main() {
-  harmonica<WIDTH, REGS> pipeline;
+  harmonica<WIDTH, REGS, LANES> pipeline;
 
-  pipeline.addFuncUnit(new BasicAlu<WIDTH, REGS>());
-  pipeline.addFuncUnit(new PredLu<WIDTH, REGS>());
-  pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, RAMSZ>());
+  pipeline.addFuncUnit(new BasicAlu<WIDTH, REGS, LANES>());
+  //pipeline.addFuncUnit(new PredLu<WIDTH, REGS, LANES>());
+  //pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, LANES, RAMSZ>());
 
   pipeline.generate();
 
