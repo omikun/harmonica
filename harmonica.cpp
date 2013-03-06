@@ -37,7 +37,7 @@ const unsigned WIDTH(32), LOG2WIDTH(CLOG2(WIDTH)), REGS(8),
 static const unsigned FPU_E(8), FPU_M(23);
 
 #ifdef DEBUG
-#define DBGTAP(x) do {TAP(x); } while(0)
+#define DBGTAP(x) do { TAP(x); } while(0)
 #else
 #define DBGTAP(x) do {} while(0)
 #endif
@@ -105,7 +105,6 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(validInst);
     DBGTAP(brMispred);
 
-
     bvec<N> ir(InstructionMemory(pc));
     DBGTAP(ir);
 
@@ -139,12 +138,12 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(px);    
 
     // Predicate valid bits
-    node wrpred_d(OrN(px) && inst.has_pdst() && !GetStall(1));
+    bvec<L> wrpred_d(px & bvec<L>(inst.has_pdst() && !GetStall(1)));
     vec<3, rdport<CLOG2(R), 1, 1> > pvb_rd;
     pvb_rd[0] = rdport<CLOG2(R), 1, 1>(inst.get_psrc0(), contort(p0valid));
     pvb_rd[1] = rdport<CLOG2(R), 1, 1>(inst.get_psrc1(), contort(p1valid));
     pvb_rd[2] = rdport<CLOG2(R), 1, 1>(inst.get_pred(), contort(predvalid));
-    Bitfile(pvb_rd, p_wb_idx, OrN(p_wb), inst.get_pdst(), wrpred_d, "p");
+    Bitfile(pvb_rd, p_wb_idx, OrN(p_wb), inst.get_pdst(), OrN(wrpred_d), "p");
     PipelineBubble(2, inst.has_psrc0() && !p0valid);
     PipelineBubble(2, inst.has_psrc1() && !p1valid);
     PipelineBubble(2, inst.has_pred() && !predvalid);
@@ -153,37 +152,36 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     vec<1, rdport<CLOG2(R), IIDBITS, 1>> piid_rd;
     piid_rd[0] =
       rdport<CLOG2(R), IIDBITS, 1>(p_wb_idx, vec<1, bvec<6>>(p_wb_curiid));
-    wrport<CLOG2(R), IIDBITS, 1> piid_wr(inst.get_pdst(), iid_d, wrpred_d);
+    wrport<CLOG2(R), IIDBITS, 1> piid_wr(inst.get_pdst(), iid_d, OrN(wrpred_d));
     Regfile(piid_rd, piid_wr, "piid");
 
-#if 0
-
     // GP register file
-    bvec<N> r0value, r1value, r2value, r_wb_val;
-    node r0valid, r1valid, r2valid, r_wb;
+    vec<L, bvec<N>> r0value, r1value, r2value, r_wb_val;
+    bvec<L> r_wb;
+    node r0valid, r1valid, r2valid;
     bvec<CLOG2(R)> r_wb_idx;
     bvec<IIDBITS> r_wb_iid, r_wb_curiid;
-    vec<3, rdport<CLOG2(R), N>> rf_rd;
-    rf_rd[0] = rdport<CLOG2(R), N>(inst.get_rsrc0(), r0value);
-    rf_rd[1] = rdport<CLOG2(R), N>(inst.get_rsrc1(), r1value);
-    rf_rd[2] = rdport<CLOG2(R), N>(inst.get_rsrc2(), r2value);
-    wrport<CLOG2(R), N> rf_wr(r_wb_idx, r_wb_val, r_wb);
+    vec<3, rdport<CLOG2(R), N, L>> rf_rd;
+    rf_rd[0] = rdport<CLOG2(R), N, L>(inst.get_rsrc0(), r0value);
+    rf_rd[1] = rdport<CLOG2(R), N, L>(inst.get_rsrc1(), r1value);
+    rf_rd[2] = rdport<CLOG2(R), N, L>(inst.get_rsrc2(), r2value);
+    wrport<CLOG2(R), N, L> rf_wr(r_wb_idx, r_wb_val, r_wb);
     Regfile(rf_rd, rf_wr);
 
     DBGTAP(r0valid); DBGTAP(r1valid); DBGTAP(r2valid);
-    DBGTAP(r0value); DBGTAP(r1value); DBGTAP(r2value);
+    DBGTAP(r0value[0]); DBGTAP(r1value[0]); DBGTAP(r2value[0]);
     DBGTAP(r_wb); DBGTAP(r_wb_iid); DBGTAP(r_wb_curiid);
-    DBGTAP(r_wb_idx); DBGTAP(r_wb_val);
+    DBGTAP(r_wb_idx); DBGTAP(r_wb_val[0]);
     DBGTAP(p_wb); DBGTAP(p_wb_iid); DBGTAP(p_wb_curiid);
     DBGTAP(p_wb_idx); DBGTAP(p_wb_val);
 
     // GPR valid bits
-    node wrreg_d(px && inst.has_rdst() && !GetStall(1));
-    vec<3, rdport<CLOG2(R), 1> > rvb_rd;
-    rvb_rd[0] = rdport<CLOG2(R), 1>(inst.get_rsrc0(), bvec<1>(r0valid));
-    rvb_rd[1] = rdport<CLOG2(R), 1>(inst.get_rsrc1(), bvec<1>(r1valid));
-    rvb_rd[2] = rdport<CLOG2(R), 1>(inst.get_rsrc2(), bvec<1>(r2valid));
-    Bitfile(rvb_rd, r_wb_idx, r_wb, inst.get_rdst(), wrreg_d);
+    bvec<L> wrreg_d(px & bvec<L>(inst.has_rdst() && !GetStall(1)));
+    vec<3, rdport<CLOG2(R), 1, 1> > rvb_rd;
+    rvb_rd[0] = rdport<CLOG2(R), 1, 1>(inst.get_rsrc0(), contort(r0valid));
+    rvb_rd[1] = rdport<CLOG2(R), 1, 1>(inst.get_rsrc1(), contort(r1valid));
+    rvb_rd[2] = rdport<CLOG2(R), 1, 1>(inst.get_rsrc2(), contort(r2valid));
+    Bitfile(rvb_rd, r_wb_idx, OrN(r_wb), inst.get_rdst(), OrN(wrreg_d));
     PipelineBubble(2, inst.has_rsrc0() && !r0valid);
     PipelineBubble(2, inst.has_rsrc1() && !r1valid);
     PipelineBubble(2, inst.has_rsrc2() && !r2valid);
@@ -192,9 +190,10 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(inst.get_rdst());
 
     // GPR writer IID bits
-    vec<1, rdport<CLOG2(R), IIDBITS> > riid_rd;
-    riid_rd[0] = rdport<CLOG2(R), IIDBITS>(r_wb_idx, r_wb_curiid);
-    wrport<CLOG2(R), IIDBITS> riid_wr(inst.get_rdst(), iid_d, wrreg_d);
+    vec<1, rdport<CLOG2(R), IIDBITS, 1> > riid_rd;
+    riid_rd[0] =
+      rdport<CLOG2(R), IIDBITS, 1>(r_wb_idx, vec<1, bvec<6>>(r_wb_curiid));
+    wrport<CLOG2(R), IIDBITS, 1> riid_wr(inst.get_rdst(), iid_d, OrN(wrreg_d));
     Regfile(riid_rd, riid_wr, "riid");
 
     vec<8, fuInput<N, R, L>> fuin;
@@ -209,7 +208,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       fuin[i].pdest = PipelineReg(2, inst.has_pdst());
       fuin[i].stall = fustall[i];
 
-      for (unsigned j = 0; i < L; ++j) {
+      for (unsigned j = 0; j < L; ++j) {
         fuin[i].r0[j] = PipelineReg(2, r0value[j]);
         fuin[i].r1[j] = PipelineReg(2, r1value[j]);
         fuin[i].r2[j] = PipelineReg(2, r2value[j]);
@@ -241,16 +240,18 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     // // // Functional Units // // //
     // Decide at the decode stage which functional unit is producing the result.
-    bvec<64> opdec(Decoder(inst.get_opcode(), px));
+    bvec<64> opdec(Decoder(inst.get_opcode(), OrN(px)));
     vector<node> fu_sel;
     for (unsigned i = 0; i < funcUnits.size(); ++i) {
       vector<node> sel_nodes;
       vector<unsigned> opcodes(funcUnits[i]->get_opcodes());
       for (unsigned j = 0; j < opcodes.size(); ++j)
         sel_nodes.push_back(opdec[opcodes[j]]);
-      fu_sel.push_back(OrN(sel_nodes) && (wrreg_d || wrpred_d || wrmem_d));
+      fu_sel.push_back(OrN(sel_nodes) && OrN(wrreg_d | wrpred_d) || wrmem_d);
       DBGTAP(fu_sel[i]);
     }
+
+#if 0
 
     // Attach the inputs and outputs
     vec<8, fuOutput<N, R, L>> fuout;
@@ -309,9 +310,10 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     p_wb = try_p_wb && p_wb_iid == p_wb_curiid;
     DBGTAP(try_p_wb); DBGTAP(fu_pdest); DBGTAP(fu_valid);
 
+    #endif
+
     // Generate hazard unit/pipeline regs.
     genPipelineRegs();
-    #endif
   }  
 
   vector<FuncUnit<N, R, L>*> funcUnits;

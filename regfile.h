@@ -29,7 +29,7 @@ template <unsigned M, unsigned N, unsigned R, unsigned L>
       #ifdef DEBUG
       ostringstream oss;
       oss << prefix << "reg" << j << i;
-      tap<N, bvec>(oss.str(), regs[j][i]);
+      tap(oss.str(), regs[j][i]);
       #endif
     }
   }
@@ -48,8 +48,8 @@ template <unsigned M, unsigned R>
 {
   const unsigned long SIZE(1<<M);
   bvec<SIZE> setsig(Decoder(set_idx, set)), clearsig(Decoder(clear_idx, clear));
-  tap<SIZE, bvec>("setsig", setsig);
-  tap<SIZE, bvec>("clearsig", clearsig);
+  tap("setsig", setsig);
+  tap("clearsig", clearsig);
 
   vec<SIZE, bvec<1>> bits;
   for (unsigned i = 0; i < SIZE; ++i) {
@@ -57,7 +57,7 @@ template <unsigned M, unsigned R>
     #ifdef DEBUG
     ostringstream oss;
     oss << prefix << "vreg" << i;
-    tap<1, bvec>(oss.str(), bits[i]);
+    tap(oss.str(), bits[i]);
     #endif
   }
 
