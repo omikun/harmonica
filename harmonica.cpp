@@ -149,13 +149,14 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     PipelineBubble(2, inst.has_psrc1() && !p1valid);
     PipelineBubble(2, inst.has_pred() && !predvalid);
 
-#if 0
-
     // Predicate writer IID bits
-    vec<1, rdport<CLOG2(R), IIDBITS> > piid_rd;
-    piid_rd[0] = rdport<CLOG2(R), IIDBITS>(p_wb_idx, p_wb_curiid);
-    wrport<CLOG2(R), IIDBITS> piid_wr(inst.get_pdst(), iid_d, wrpred_d);
+    vec<1, rdport<CLOG2(R), IIDBITS, 1>> piid_rd;
+    piid_rd[0] =
+      rdport<CLOG2(R), IIDBITS, 1>(p_wb_idx, vec<1, bvec<6>>(p_wb_curiid));
+    wrport<CLOG2(R), IIDBITS, 1> piid_wr(inst.get_pdst(), iid_d, wrpred_d);
     Regfile(piid_rd, piid_wr, "piid");
+
+#if 0
 
     // GP register file
     bvec<N> r0value, r1value, r2value, r_wb_val;
