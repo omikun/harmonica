@@ -33,10 +33,13 @@ template <unsigned N, unsigned R, unsigned L> struct fuInput {
   chdl::bvec<6> op;
   chdl::bvec<IDLEN> iid;
   chdl::bvec<CLOG2(R)> didx;
+
+  chdl::bvec<L> wb;
 };
 
 template <unsigned N, unsigned R, unsigned L> struct fuOutput {
   chdl::vec<L, chdl::bvec<N>> out;
+  chdl::bvec<L> wb;
   chdl::bvec<IDLEN> iid;
   chdl::node valid, pdest;
   chdl::bvec<CLOG2(R)> didx;
@@ -109,6 +112,7 @@ template <unsigned N, unsigned R, unsigned L>
     o.iid = Wreg(w, in.iid);
     o.didx = Wreg(w, in.didx);
     o.pdest = Wreg(w, in.pdest);
+    o.wb = Wreg(w, in.wb);
   
     isReady = w;
 
@@ -121,7 +125,6 @@ template <unsigned N, unsigned R, unsigned L>
   chdl::node isReady;
 };
 
-#if 0
 // Predicate logic unit. All of the predicate/predicate and register/predicate
 // instructions.
 template <unsigned N, unsigned R, unsigned L>
@@ -142,25 +145,29 @@ template <unsigned N, unsigned R, unsigned L>
 
     fuOutput<N, R, L> o;
 
-    bvec<N> r0(in.r0);
-    node p0(in.p0), p1(in.p1);
-
-    bvec<64> mux_in;
-    mux_in[0x26] = OrN(r0);
-    mux_in[0x27] = p0 && p1;
-    mux_in[0x28] = p0 || p1;
-    mux_in[0x29] = p0 != p1;
-    mux_in[0x2a] = !p0;
-    mux_in[0x2b] = r0[N-1];
-    mux_in[0x2c] = !OrN(r0);
-
     node w(!in.stall);
-    o.out = Zext<N>(bvec<1>(Wreg(w, Mux(in.op, mux_in))));
+
+    for (unsigned i = 0; i < L; ++i) {
+      bvec<N> r0(in.r0[i]);
+      node p0(in.p0[i]), p1(in.p1[i]);
+
+      bvec<64> mux_in;
+      mux_in[0x26] = OrN(r0);
+      mux_in[0x27] = p0 && p1;
+      mux_in[0x28] = p0 || p1;
+      mux_in[0x29] = p0 != p1;
+      mux_in[0x2a] = !p0;
+      mux_in[0x2b] = r0[N-1];
+      mux_in[0x2c] = !OrN(r0);
+
+      o.out[i] = Zext<N>(bvec<1>(Wreg(w, Mux(in.op, mux_in))));
+    }
+
     o.valid = Wreg(w, valid);
     o.iid = Wreg(w, in.iid);
     o.didx = Wreg(w, in.didx);
     o.pdest = Wreg(w, in.pdest);
-  
+    o.wb = Wreg(w, in.wb);
     isReady = w;
 
     return o;
@@ -171,6 +178,7 @@ template <unsigned N, unsigned R, unsigned L>
   chdl::node isReady;
 };
 
+#if 0
 // Integrated SRAM load/store unit with no MMU
 template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
   class SramLsu : public FuncUnit<N, R, L>
