@@ -251,8 +251,6 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       DBGTAP(fu_sel[i]);
     }
 
-#if 0
-
     // Attach the inputs and outputs
     vec<8, fuOutput<N, R, L>> fuout;
     bvec<8> fu_issue, fu_notready;
@@ -262,11 +260,11 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       fu_notready[i] = !funcUnits[i]->ready() && fu_issue[i];
     }
     PipelineStall(2, OrN(fu_notready));
-    DBGTAP(fuout[0].out);
+    DBGTAP(fuout[0].out[0]);
     DBGTAP(fuout[0].valid);
     DBGTAP(fuout[0].iid);
     DBGTAP(fuout[0].didx);
-    DBGTAP(fuout[1].out);
+    DBGTAP(fuout[1].out[0]);
     DBGTAP(fuout[1].valid);
     DBGTAP(fuout[1].iid);
     DBGTAP(fuout[1].didx);
@@ -278,8 +276,8 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       fu_valid[i] = fuout[i].valid;
       fu_pdest[i] = fuout[i].pdest;
     }
-    node try_r_wb(OrN(fu_valid & ~fu_pdest)),
-         try_p_wb(OrN(fu_valid & fu_pdest));
+    bvec<L> try_r_wb(fu_valid & ~fu_pdest),
+            try_p_wb(fu_valid & fu_pdest);
     bvec<3> fu_r_out_sel(Log2(fu_valid & ~fu_pdest)),
             fu_p_out_sel(Log2(fu_valid & fu_pdest));
     bvec<8> other_val_r(~(Lit<8>(1)<<fu_r_out_sel) & (fu_valid&~fu_pdest)),
@@ -290,27 +288,29 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     fustall = other_val_r | other_val_p;
 
-    vec<8, bvec<N> > fu_outputs;
-    vec<8, bvec<LOG2(R)> > fu_didx;
-    vec<8, bvec<IIDBITS> > fu_iid;
+    vec<8, vec<L, bvec<N>>> fu_outputs;
+    vec<8, bvec<LOG2(R)>> fu_didx;
+    vec<8, bvec<IIDBITS>> fu_iid;
     for (unsigned i = 0; i < funcUnits.size(); ++i) {
-      fu_outputs[i] = fuout[i].out;
+      for (unsigned j = 0; j < L; ++j)
+        fu_outputs[i][j] = fuout[i].out[j];
       fu_didx[i] = fuout[i].didx;
       fu_iid[i] = fuout[i].iid;
     }
-    r_wb_val = Mux(fu_r_out_sel, fu_outputs);
+
+    for (unsigned i = 0; i < L; ++i)
+      r_wb_val[i] = Mux(fu_r_out_sel, fu_outputs[i]);
     r_wb_idx = Mux(fu_r_out_sel, fu_didx);
     r_wb_iid = Mux(fu_r_out_sel, fu_iid);
 
-    p_wb_val = Mux(fu_p_out_sel, fu_outputs)[0];
+    for (unsigned i = 0; i < L; ++i)
+      p_wb_val[i] = Mux(fu_p_out_sel, fu_outputs[i])[0];
     p_wb_idx = Mux(fu_p_out_sel, fu_didx);
     p_wb_iid = Mux(fu_p_out_sel, fu_iid);
 
-    r_wb = try_r_wb && r_wb_iid == r_wb_curiid;
-    p_wb = try_p_wb && p_wb_iid == p_wb_curiid;
+    r_wb = try_r_wb & bvec<L>(r_wb_iid == r_wb_curiid);
+    p_wb = try_p_wb & bvec<L>(p_wb_iid == p_wb_curiid);
     DBGTAP(try_p_wb); DBGTAP(fu_pdest); DBGTAP(fu_valid);
-
-    #endif
 
     // Generate hazard unit/pipeline regs.
     genPipelineRegs();
@@ -323,7 +323,7 @@ int main() {
   harmonica<WIDTH, REGS, LANES> pipeline;
 
   pipeline.addFuncUnit(new BasicAlu<WIDTH, REGS, LANES>());
-  //pipeline.addFuncUnit(new PredLu<WIDTH, REGS, LANES>());
+  pipeline.addFuncUnit(new PredLu<WIDTH, REGS, LANES>());
   //pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, LANES, RAMSZ>());
 
   pipeline.generate();
