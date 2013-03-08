@@ -76,6 +76,9 @@ template <unsigned N, unsigned R, unsigned L>
     using namespace std;
     using namespace chdl;
 
+    tap("valid_alu", valid);
+    tap("stall_alu", in.stall);
+
     fuOutput<N, R, L> o;
     node w(!in.stall);
 
@@ -147,6 +150,9 @@ template <unsigned N, unsigned R, unsigned L>
 
     node w(!in.stall);
 
+    tap("valid_plu", valid);
+    tap("stall_plu", in.stall);
+
     for (unsigned i = 0; i < L; ++i) {
       bvec<N> r0(in.r0[i]);
       node p0(in.p0[i]), p1(in.p1[i]);
@@ -178,8 +184,7 @@ template <unsigned N, unsigned R, unsigned L>
   chdl::node isReady;
 };
 
-#if 0
-// Integrated SRAM load/store unit with no MMU
+// Integrated SRAM load/store unit with no MMU, per-lane RAM
 template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
   class SramLsu : public FuncUnit<N, R, L>
 {
@@ -201,25 +206,32 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
 
     fuOutput<N, R, L> o;
 
+    node w(!in.stall);
+
     bvec<6> op(in.op);
-    bvec<N> r0(in.r0), r1(in.r1), imm(in.imm),
-            addr(imm + Mux(op[0], in.r1, in.r0));
-    bvec<L2WORDS> memaddr(Zext<L2WORDS>(addr[range<CLOG2(N/8), N-1>()]));
-    bvec<CLOG2(N)> memshift(Lit<CLOG2(N)>(8) *
-                              Zext<CLOG2(N)>(addr[range<0, CLOG2(N/8)-1>()]));
+    bvec<N> imm(in.imm);
 
-    bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
+    for (unsigned i = 0; i < L; ++i) {
+      bvec<N> r0(in.r0[i]), r1(in.r1[i]), imm(in.imm),
+              addr(imm + Mux(op[0], r1, r0));
+      bvec<L2WORDS> memaddr(Zext<L2WORDS>(addr[range<CLOG2(N/8), N-1>()]));
+      bvec<CLOG2(N)> memshift(Lit<CLOG2(N)>(8) *
+                                Zext<CLOG2(N)>(addr[range<0, CLOG2(N/8)-1>()]));
 
-    o.out = sramout >> memshift;
-    o.valid = PipelineReg(3, valid && op[0]);
-    o.iid = PipelineReg(3, in.iid);
-    o.didx = PipelineReg(3, in.didx);
-    o.pdest = PipelineReg(3, in.pdest);
+      bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
+
+      o.out[i] = sramout >> memshift;
+    }
+
+    o.valid = Wreg(w, valid && op[0]);
+    o.iid = Wreg(w, in.iid);
+    o.didx = Wreg(w, in.didx);
+    o.pdest = Wreg(w, in.pdest);
+    o.wb = Wreg(w, in.wb);
 
     return o;
   }
  private:
 };
-#endif
 
 #endif

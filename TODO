@@ -1,4 +1,6 @@
 Todo List:
+  _ Fix the load/store unit pipeline registers
+    - shouldn't it just be a wreg with a stall signal?
   _ Add forwarding logic.
     - The basic problem is that decode-execute requires at least 2 cycles, but
       we have enough information in the decode stage that we could forward the

@@ -121,7 +121,6 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     // Fetch->Decode pipeline regs
     node validInst_d(PipelineReg(1, validInst)); DBGTAP(validInst_d);
     bvec<IIDBITS> iid_d(PipelineReg(1, iid));    DBGTAP(iid_d);
-    bvec<N> pc_d(pc);
 
     // // // Decoder // // //
     harpinst<N, CLOG2(R), CLOG2(R)> inst(ir);
@@ -197,6 +196,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     PipelineBubble(2, inst.has_rsrc2() && !r2valid);
 
     DBGTAP(wrreg_d);
+    DBGTAP(wrpred_d);
     DBGTAP(inst.get_rdst());
 
     // GPR writer IID bits
@@ -208,8 +208,13 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     vec<8, fuInput<N, R, L>> fuin;
     bvec<8> fustall;
+    bvec<N> nextpc_d(PipelineReg(1, pc + Lit<N>(N/8))),
+            nextpc_x(PipelineReg(2, nextpc_d));
+    TAP(nextpc_d);
+    TAP(nextpc_x);
+    
     for (unsigned i = 0; i < 8; ++i) {
-      fuin[i].pc = PipelineReg(2, PipelineReg(1, pc + Lit<N>(N/8)));
+      fuin[i].pc = nextpc_x;
       fuin[i].imm = PipelineReg(2, inst.get_imm());
       fuin[i].hasimm = PipelineReg(2, inst.has_imm());
       fuin[i].iid = PipelineReg(2, iid_d);
@@ -243,7 +248,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(inst.is_jmp());
     node brdiv(inst.is_jmp() && OrN(px) && !AndN(px));
     takenJmp = !GetStall(1) && px[0] && inst.is_jmp();
-    jmpPc = Mux(inst.has_imm(), r0value[0], pc_d + inst.get_imm());
+    jmpPc = Mux(inst.has_imm(), r0value[0], pc + inst.get_imm());
     PipelineFlush(1, brMispred);
 
     DBGTAP(brdiv);
@@ -258,7 +263,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       vector<unsigned> opcodes(funcUnits[i]->get_opcodes());
       for (unsigned j = 0; j < opcodes.size(); ++j)
         sel_nodes.push_back(opdec[opcodes[j]]);
-      fu_sel.push_back(OrN(sel_nodes) && OrN(wrreg_d | wrpred_d) || wrmem_d);
+      fu_sel.push_back(OrN(sel_nodes) && (OrN(wrreg_d | wrpred_d) || wrmem_d));
       DBGTAP(fu_sel[i]);
     }
 
@@ -279,9 +284,10 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(fu_notready);
 
     // Count in-flight operations (operations in flight in the execution units)
-    node inc_ifo(PipelineReg(2, validInst_d && 
+    node inc_ifo(PipelineReg(2, validInst_d && !inst.is_store() &&
                                 (!inst.is_jmp() ||
-                                  inst.get_opcode() == Lit<6>(0x1b)))),
+                                  inst.get_opcode() == Lit<6>(0x1b) ||
+                                  inst.get_opcode() == Lit<6>(0x1c)))),
          dec_ifo;
     bvec<IIDBITS> ifo;
     vec<4, bvec<IIDBITS>> ifo_in;
@@ -339,7 +345,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     r_wb = bvec<L>(try_r_wb && (r_wb_iid == r_wb_curiid)) & wbout_r;
     p_wb = bvec<L>(try_p_wb && (p_wb_iid == p_wb_curiid)) & wbout_p;
     dec_ifo = try_r_wb || try_p_wb;
-    DBGTAP(try_p_wb); DBGTAP(fu_pdest); DBGTAP(fu_valid);
+    DBGTAP(try_r_wb); DBGTAP(try_p_wb); DBGTAP(fu_pdest); DBGTAP(fu_valid);
 
     // Generate hazard unit/pipeline regs.
     genPipelineRegs();
@@ -353,7 +359,7 @@ int main() {
 
   pipeline.addFuncUnit(new BasicAlu<WIDTH, REGS, LANES>());
   pipeline.addFuncUnit(new PredLu<WIDTH, REGS, LANES>());
-  //pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, LANES, RAMSZ>());
+  pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, LANES, RAMSZ>());
 
   pipeline.generate();
 
