@@ -59,7 +59,6 @@ template <unsigned LAT, unsigned N>
 {
   flushOut = takenJmp;
   return Mux(takenJmp, Mux(stall, pc + Lit<N>(N/8), pc), jmpPc);
-  //return Mux(stall, Mux(takenJmp, pc + Lit<N>(N/8), jmpPc), pc);
 }
 
 template <unsigned N> bvec<N> InstructionMemory(bvec<N> addr) {
@@ -279,6 +278,20 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(fuout[0].wb);      DBGTAP(fuout[1].wb);
     DBGTAP(fu_notready);
 
+    // Count in-flight operations (operations in flight in the execution units)
+    node inc_ifo(PipelineReg(2, validInst_d && 
+                                (!inst.is_jmp() ||
+                                  inst.get_opcode() == Lit<6>(0x1b)))),
+         dec_ifo;
+    bvec<IIDBITS> ifo;
+    vec<4, bvec<IIDBITS>> ifo_in;
+    ifo_in[0] = ifo;
+    ifo_in[1] = ifo - Lit<IIDBITS>(1);
+    ifo_in[2] = ifo + Lit<IIDBITS>(1);
+    ifo_in[3] = ifo;
+    ifo = Reg(Mux(Cat(inc_ifo, dec_ifo), ifo_in));
+    DBGTAP(ifo); DBGTAP(inc_ifo); DBGTAP(dec_ifo);
+
     // Writeback
     bvec<8> fu_valid, fu_pdest;
     for (unsigned i = 0; i < 8; ++i) {
@@ -325,6 +338,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     r_wb = bvec<L>(try_r_wb && (r_wb_iid == r_wb_curiid)) & wbout_r;
     p_wb = bvec<L>(try_p_wb && (p_wb_iid == p_wb_curiid)) & wbout_p;
+    dec_ifo = try_r_wb || try_p_wb;
     DBGTAP(try_p_wb); DBGTAP(fu_pdest); DBGTAP(fu_valid);
 
     // Generate hazard unit/pipeline regs.

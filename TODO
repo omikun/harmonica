@@ -3,12 +3,18 @@ Todo List:
     - The basic problem is that decode-execute requires at least 2 cycles, but
       we have enough information in the decode stage that we could forward the
       value from writeback to execute at the beginning of the next cycle.
-  _ Add branch prediction
+  _ Factor the codebase
+    - Yes, it's parameterized, but a lot of the parameters could be kept in a
+      header as constants.
+  _ Add [true] branch prediction
   _ Create a load/store unit that interfaces to a cache.
   _ Create an integer multiplication and division unit.
   _ Create a pipelined FxPU or FPU.
   _ Add kernel mode.
   _ Add support for interrupts/exceptions (including shadow register file).
+    . Add a counter for in-flight instructions.
   _ Add support for multiple SIMD lanes.
+    - Add a "running lanes" counter/mask of some type to be used to specify
+      which lanes are considered valid and which ones are stalled.
   _ Write a test app. Likely to be most fun: SIMD mandelbrot zoomer with text
     graphics output.
