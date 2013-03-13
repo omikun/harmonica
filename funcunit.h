@@ -170,10 +170,15 @@ template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
    				check for Load Store Forwarding (LSF)
 					if LSF enabled, clear pending flag,
 					set loaded flag, skip to cycle 4
+				TODO: push request to memory if ldq empty
+					clear pending flag
    Cycle 2: Compete for memory if pending flag is set
    				Clear pending flag once sent to memory
    Cycle 3: Data returned from memory
    				Set loaded flag
+				TODO: commit data if no other loaded data
+					Clear loaded flag,
+					Set free flag
    Cycle 4: Once loaded, compete for write back commit
    				If selected for commit, 
 					Clear loaded flag
