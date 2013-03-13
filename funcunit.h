@@ -163,6 +163,31 @@ template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
 };
 
 // Integrated SRAM load/store unit with no MMU
+/*
+   Load instruction:
+   Cycle 1: insert request into loadqueue
+   				Set pending flag, clear free flag
+   				check for Load Store Forwarding (LSF)
+					if LSF enabled, clear pending flag,
+					set loaded flag, skip to cycle 4
+   Cycle 2: Compete for memory if pending flag is set
+   				Clear pending flag once sent to memory
+   Cycle 3: Data returned from memory
+   				Set loaded flag
+   Cycle 4: Once loaded, compete for write back commit
+   				If selected for commit, 
+					Clear loaded flag
+					Set free flag
+   Store instruction:
+   Cycle 1: insert request into store queue
+				check for WAR hazard, set waiting flag
+				and waitidx (queue id of dependent load)
+   Cycle 2: if no WAR and at head of queue, compete for memory
+   				if WAR, wait until pending flag of dependent
+				load is cleared (1 cycle bubble for pending flag
+				to propagate)
+
+*/
 template <unsigned N, unsigned R, unsigned SIZE>
   class SramLsu : public FuncUnit<N, R>
 {
@@ -277,7 +302,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	chdl::node sendldreq=Lit(1), sendstreq(0);
 	bvec<CLOG2(Q)+1> stqSize;
 	bvec<CLOG2(Q)> head, tail;
-	chdl::node stqReq = !op[0]; 			//only when memory commit arbitration decides
+	chdl::node stqReq; 			//only when memory commit arbitration decides
 	chdl::node dependentLd;
 	tail = Wreg(stqReq && Mux(tail, stqValid), tail+Lit<3>(1) );	//only on successful commit to memory
 	head = Wreg(stqEnable, head+Lit<3>(1) ); //only on valid st requests 
@@ -357,6 +382,9 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		stqValid[i] = stq[i].valid;
 	}
 	
+	//loading data (from memory or st forwarding)
+	////////////////////////////////////////////////
+	
 	//always send ld req unless store queue is full, but not if head store depends on a pending ld
 	chdl::node WARexists = Mux(tail, stqWaiting);
 	sendldreq = !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || ldqEmpty);
@@ -365,7 +393,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	ldqMemaddrOut = Mux(pendingldqidx, ldqMemaddr);
 	bvec<L2WORDS> stqMemaddrOut = Mux(tail, stqMemaddr);
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
-	chdl::node memValidOut = Mux(sendldreq, Mux(pendingldqidx, ldqPending), Mux(tail, stqValid) );
+	chdl::node memValidOut = ldqPendingFlag || Mux(tail, stqValid);
 
 	TAP(ldqPending);
 	TAP(memaddrOut);
@@ -376,7 +404,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	////////////////////////////////////////////////
 	//bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
 //*/
-	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), valid && !op[0], "data.hex");
+	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
 	bvec<N> memDataIn = delay(sramout, DELAY);
 	//TESTING PURPOSE ONLY; MUST CHANGE WHEN INTERFACING WITH MEMORY
 	//bvec<CLOG2(Q)> returnqidx = sramout[range<0,CLOG2(Q)-1>()];
