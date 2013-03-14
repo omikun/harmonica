@@ -170,7 +170,7 @@ template <unsigned N, unsigned R> class PredLu : public FuncUnit<N, R> {
    				check for Load Store Forwarding (LSF)
 					if LSF enabled, clear pending flag,
 					set loaded flag, skip to cycle 4
-				TODO: push request to memory if ldq empty
+				Bypass: push request to memory if ldq empty AND no LSF
 					clear pending flag
    Cycle 2: Compete for memory if pending flag is set
    				Clear pending flag once sent to memory
@@ -281,10 +281,10 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	chdl::node ldqEnable = valid && op[0] && isReady;
 	bvec<Q> ldqInsert = Decoder(freeldqidx, ldqEnable);
 	bvec<Q> ldqPending;
-
+	bvec<Q> returnSelect = Decoder(returnqid, memvalid); //have to move returnqid up here
 	for(int i=0; i<Q; ++i)
 	{
-		ldq[i].free = Wreg(reset || (ldqInsert[i]) || ldqDone[i], reset || ldqDone[i]);	//ldqDone[i] should always be 0 on MSHR insert
+		ldq[i].free = Wreg(reset || (ldqInsert[i]) || ldqDone[i] || returnSelect[i], reset || ldqDone[i] || (returnSelect[i] && !readyToCommit) );	//ldqDone[i] should always be 0 on MSHR insert, how to set w/o ldqDone and readyToCommit?
 		ldq[i].memaddr= Wreg<L2WORDS>(ldqInsert[i], memaddr);
 		ldq[i].iid = Wreg(ldqInsert[i], in.iid);
 		ldq[i].didx = Wreg(ldqInsert[i], in.didx);
@@ -373,7 +373,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	for(int i=0; i<Q; ++i)
 	{
 		ldqPending[i] = ldq[i].pending;
-		ldq[i].pending = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF) );
+		ldq[i].pending = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF && !ldqEmpty) );
 
 		ldqMemaddr[i] = ldq[i].memaddr;
 		ldqiid[i] = ldq[i].iid;
@@ -395,7 +395,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	sendldreq = !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || ldqEmpty);
 	sendstreq = !sendldreq;
 
-	ldqMemaddrOut = Mux(pendingldqidx, ldqMemaddr);
+	ldqMemaddrOut = Mux(ldqEmpty && !enableLSF, Mux(pendingldqidx, ldqMemaddr), memaddr);
 	bvec<L2WORDS> stqMemaddrOut = Mux(tail, stqMemaddr);
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
 	chdl::node memValidOut = ldqPendingFlag || Mux(tail, stqValid);
@@ -405,24 +405,21 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	TAP(sendldreq); TAP(sendstreq);
 	TAP(stqWaiting);
 	
-	//loading data (from memory or st forwarding)
-	////////////////////////////////////////////////
+	//TESTING PURPOSE ONLY; MUST CHANGE WHEN INTERFACING WITH MEMORY
 	//bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
 //*/
 	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
 	bvec<N> memDataIn = delay(sramout, DELAY);
-	//TESTING PURPOSE ONLY; MUST CHANGE WHEN INTERFACING WITH MEMORY
-	//bvec<CLOG2(Q)> returnqidx = sramout[range<0,CLOG2(Q)-1>()];
-	//chdl::node memvalid = sramout[4];
 	bvec<CLOG2(Q)> returnqidx = delay(pendingldqidx, DELAY);
 	chdl::node memvalid = delay(ldqPendingFlag, DELAY);
 	//memStall = sramout[8];
 
 	bvec<Q> ldqReturn = Decoder(returnqidx, memvalid);
+	chdl::node readyToCommit = OrN(ldqDone);
 	
 	for(int i=0; i<Q; ++i)
 	{	
-		ldq[i].loaded = Wreg( ldqInsert[i] || ldqDone[i] || (ldqReturn[i] && memvalid), (ldqReturn[i] && memvalid) || (ldqInsert[i] && enableLSF) );
+		ldq[i].loaded = Wreg( ldqInsert[i] || ldqDone[i] || (ldqReturn[i] && memvalid), (ldqReturn[i] && memvalid && readyToCommit) || (ldqInsert[i] && enableLSF) );
 		ldq[i].data = Wreg<N>( (ldqReturn[i] && memvalid) || ldqInsert[i], Mux(ldqInsert[i], memDataIn, stqLSFData) );	//loads from store at insertion regardless of LSF is enabled, is this a problem?
 	}
 
@@ -452,11 +449,12 @@ template <unsigned N, unsigned R, unsigned SIZE>
 
 	isReady = ldqAvailable && stqSize != Lit<CLOG2(Q)+1>(Q); // && stqAvailable or stqSize > 0
 	TAP(isReady);
+
 #if 1
-    o.out = Mux(loadedldqidx, ldqData);
-	o.valid = OrN(ldqDone);
-	o.iid = Mux(loadedldqidx, ldqiid);
-	o.didx = Mux(loadedldqidx, ldqdidx);
+    o.out = Mux(readyToCommit, memDataIn, Mux(loadedldqidx, ldqData));
+	o.valid = readyToCommit || memvalid;
+	o.iid = Mux(readyToCommit, Mux(returnqidx, ldqiid), Mux(loadedldqidx, ldqiid) );
+	o.didx = Mux(readyToCommit, Mux(returnqidx, ldqdidx), Mux(loadedldqidx, ldqdidx) );
 #else
     o.out = sramout >> memshift;
     o.valid = PipelineReg(3, valid && op[0]);
