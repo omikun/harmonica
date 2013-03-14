@@ -1,3 +1,4 @@
+#include <sstream>
 #include "pipeline.h"
 
 using namespace std;
@@ -70,8 +71,12 @@ void PipelineFlush(unsigned n, chdl::node flush) {
 }
 
 void genPipelineRegs() {
-  // Create the pipeline registers                                              
+  // Create the pipeline registers
   for (auto it = pregs.begin(); it != pregs.end(); ++it) {
+    ostringstream oss;
+    oss << it->first;
+    hierarchy_enter("pipeline_reg" + oss.str());
+
     preg &pr(it->second);
     pr.anystall = OrN(pr.stall);
     pr.flushorbubble = OrN(pr.flush) || OrN(pr.bubble) && !(pr.anystall);
@@ -84,5 +89,6 @@ void genPipelineRegs() {
       { ostringstream oss; oss << "flushorbubble" << it->first;
         tap(oss.str(), pr.flushorbubble); }
 
+    hierarchy_exit();
   }
 }

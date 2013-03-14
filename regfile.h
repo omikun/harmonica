@@ -18,6 +18,8 @@ template <unsigned M, unsigned N, unsigned L> struct wrport {
 template <unsigned M, unsigned N, unsigned R, unsigned L>
   void Regfile(vec<R, rdport<M, N, L>> r, wrport<M, N, L> w, string prefix = "")
 {
+  HIERARCHY_ENTER();
+
   const unsigned long SIZE(1<<M);
 
   bvec<SIZE> wrsig(Decoder(w.a, OrN(w.we)));
@@ -37,6 +39,8 @@ template <unsigned M, unsigned N, unsigned R, unsigned L>
   for (unsigned j = 0; j < L; ++j)
     for (unsigned i = 0; i < R; ++i)
       r[i].q[j] = Mux(r[i].a, regs[j]);
+
+  HIERARCHY_EXIT();
 }
 
 // Valid bit file (2^M entry, 1 set port, 1 clear port, R-read-port)
@@ -46,6 +50,8 @@ template <unsigned M, unsigned R>
                string prefix = "")
 
 {
+  HIERARCHY_ENTER();
+
   const unsigned long SIZE(1<<M);
   bvec<SIZE> setsig(Decoder(set_idx, set)), clearsig(Decoder(clear_idx, clear));
   tap("setsig", setsig);
@@ -63,4 +69,6 @@ template <unsigned M, unsigned R>
 
   for (unsigned i = 0; i < R; ++i)
     r[i].q[0] = Mux(r[i].a, bits);
+
+  HIERARCHY_EXIT();
 }

@@ -21,6 +21,7 @@
 #include <chdl/tap.h>
 #include <chdl/sim.h>
 #include <chdl/netlist.h>
+#include <chdl/hierarchy.h>
 
 static const unsigned IDLEN(6);
 
@@ -76,6 +77,8 @@ template <unsigned N, unsigned R, unsigned L>
     using namespace std;
     using namespace chdl;
 
+    hierarchy_enter("BasicAlu");
+
     tap("valid_alu", valid);
     tap("stall_alu", in.stall);
 
@@ -119,6 +122,8 @@ template <unsigned N, unsigned R, unsigned L>
   
     isReady = w;
 
+    hierarchy_exit();
+
     return o;
   }
 
@@ -145,6 +150,8 @@ template <unsigned N, unsigned R, unsigned L>
   virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) {
     using namespace std;
     using namespace chdl;
+
+    hierarchy_enter("PredLu");
 
     fuOutput<N, R, L> o;
 
@@ -176,6 +183,8 @@ template <unsigned N, unsigned R, unsigned L>
     o.wb = Wreg(w, in.wb);
     isReady = w;
 
+    hierarchy_exit();
+
     return o;
   }
 
@@ -204,6 +213,8 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
     using namespace std;
     using namespace chdl;
 
+    hierarchy_enter("SramLsu");
+
     fuOutput<N, R, L> o;
 
     node w(!in.stall);
@@ -228,6 +239,8 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
     o.didx = Wreg(w, in.didx);
     o.pdest = Wreg(w, in.pdest);
     o.wb = Wreg(w, in.wb);
+
+    hierarchy_exit();
 
     return o;
   }

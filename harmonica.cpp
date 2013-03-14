@@ -19,8 +19,8 @@
 #include <chdl/tap.h>
 #include <chdl/sim.h>
 #include <chdl/netlist.h>
-
 #include <chdl/analysis.h>
+#include <chdl/hierarchy.h>
 
 #include "pipeline.h"
 #include "funcunit.h"
@@ -104,6 +104,8 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
   void generate() {
     // // // Fetch  Unit // // //
+    hierarchy_enter("FetchUnit");
+
     bvec<IIDBITS> iid;
     bvec<N> pc, jmpPc;
     node takenJmp, validInst(GetValid(0)), brMispred,
@@ -118,6 +120,8 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     bvec<N> ir(InstructionMemory(pc));
     DBGTAP(ir);
 
+    hierarchy_exit();
+
     // Fetch->Decode pipeline regs
     node validInst_d(PipelineReg(1, validInst)); DBGTAP(validInst_d);
     bvec<IIDBITS> iid_d(PipelineReg(1, iid));    DBGTAP(iid_d);
@@ -128,6 +132,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     // // // Registers/Scheduling // // //
     // Predicate register file
+    hierarchy_enter("PredRegFile");
     bvec<L> px, predvalue, p0value, p1value, p_wb_val, p_wb;
     node p0valid, p1valid, predvalid;
     bvec<CLOG2(R)> p_wb_idx;
@@ -142,11 +147,16 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     px = bvec<L>(validInst_d) & (bvec<L>(!inst.has_pred()) | predvalue);
 
+    hierarchy_exit();
+
     DBGTAP(predvalue);
     DBGTAP(predvalid);
-    DBGTAP(px);    
+    DBGTAP(px);
 
     // Predicate valid bits
+
+    hierarchy_enter("PredValidBits");
+
     bvec<L> wrpred_d(px & bvec<L>(inst.has_pdst() && !GetStall(1)));
     vec<3, rdport<CLOG2(R), 1, 1> > pvb_rd;
     pvb_rd[0] = rdport<CLOG2(R), 1, 1>(inst.get_psrc0(), contort(p0valid));
@@ -157,14 +167,22 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     PipelineBubble(2, inst.has_psrc1() && !p1valid);
     PipelineBubble(2, inst.has_pred() && !predvalid);
 
+    hierarchy_exit();
+
     // Predicate writer IID bits
+    hierarchy_enter("PredIIDTable");
+
     vec<1, rdport<CLOG2(R), IIDBITS, 1>> piid_rd;
     piid_rd[0] =
       rdport<CLOG2(R), IIDBITS, 1>(p_wb_idx, vec<1, bvec<6>>(p_wb_curiid));
     wrport<CLOG2(R), IIDBITS, 1> piid_wr(inst.get_pdst(), iid_d, OrN(wrpred_d));
     Regfile(piid_rd, piid_wr, "piid");
 
+    hierarchy_exit();
+
     // GP register file
+    hierarchy_enter("GPRegFile");    
+
     vec<L, bvec<N>> r0value, r1value, r2value, r_wb_val;
     bvec<L> r_wb;
     node r0valid, r1valid, r2valid;
@@ -184,7 +202,11 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(p_wb); DBGTAP(p_wb_iid); DBGTAP(p_wb_curiid);
     DBGTAP(p_wb_idx); DBGTAP(p_wb_val);
 
+    hierarchy_exit();
+
     // GPR valid bits
+    hierarchy_enter("GPValidBits");
+
     bvec<L> wrreg_d(px & bvec<L>(inst.has_rdst() && !GetStall(1)));
     vec<3, rdport<CLOG2(R), 1, 1> > rvb_rd;
     rvb_rd[0] = rdport<CLOG2(R), 1, 1>(inst.get_rsrc0(), contort(r0valid));
@@ -199,7 +221,11 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(wrpred_d);
     DBGTAP(inst.get_rdst());
 
+    hierarchy_exit();
+
     // GPR writer IID bits
+    hierarchy_enter("GPIIDTable");
+
     vec<1, rdport<CLOG2(R), IIDBITS, 1> > riid_rd;
     riid_rd[0] =
       rdport<CLOG2(R), IIDBITS, 1>(r_wb_idx, vec<1, bvec<6>>(r_wb_curiid));
@@ -212,6 +238,8 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
             nextpc_x(PipelineReg(2, nextpc_d));
     TAP(nextpc_d);
     TAP(nextpc_x);
+
+    hierarchy_exit();
     
     for (unsigned i = 0; i < 8; ++i) {
       fuin[i].pc = nextpc_x;
@@ -376,6 +404,10 @@ int main() {
   #ifndef DEBUG
   print_netlist(netlist_file);
   #endif
+
+  // Print a top-level schematic
+  ofstream dot_file("harmonica.dot");
+  dot_schematic(dot_file);
 
   // Do some metrics
   cout << "Critical path length: " << critpath() << endl;
