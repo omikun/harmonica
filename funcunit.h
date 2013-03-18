@@ -222,72 +222,72 @@ template <unsigned N, unsigned R, unsigned SIZE>
   virtual fuOutput<N, R> generate(fuInput<N, R> in, chdl::node valid) {
     const unsigned L2WORDS(CLOG2(SIZE/(N/8)));
  
-  struct mshrld {
-	  chdl::bvec<CLOG2(R)> didx;
-	  chdl::bvec<IDLEN> iid;
-	  chdl::bvec<L2WORDS> memaddr;
-	  chdl::bvec<N> data;
-	  chdl::node free;
-	  chdl::node loaded;
-	  chdl::node pending;
-  };
- 
-  struct mshrst {
-	  chdl::bvec<CLOG2(R)> didx;
-  	  chdl::bvec<IDLEN> iid;
-	  chdl::bvec<L2WORDS> memaddr;
-	  chdl::bvec<N> data;
-	  chdl::node committed;
-	  chdl::node waiting;
-		chdl::bvec<CLOG2(Q)> waitidx;
-	  chdl::node valid;
-  };
-
     using namespace std;
     using namespace chdl;
 
-    fuOutput<N, R> o;
+	struct mshrld {
+		bvec<CLOG2(R)> didx;
+		bvec<IDLEN> iid;
+		bvec<L2WORDS> memaddr;
+		bvec<N> data;
+		node free;
+		node loaded;
+		node pending;
+	};
 
+	struct mshrst {
+		bvec<CLOG2(R)> didx;
+		bvec<IDLEN> iid;
+		bvec<L2WORDS> memaddr;
+		bvec<N> data;
+		node committed;
+		node waiting;
+		bvec<CLOG2(Q)> waitidx;
+		node valid;
+	};
+
+	node resetReg;
+	node reset = !resetReg;
+	resetReg = Reg(Lit(1));
+
+	vec<Q, mshrld> ldq;
+	vec<Q, mshrst > stq;
+    fuOutput<N, R> o;
     bvec<6> op(in.op);
     bvec<N> r0(in.r0), r1(in.r1), imm(in.imm),
             addr(imm + Mux(op[0], in.r1, in.r0));
     bvec<L2WORDS> memaddr(Zext<L2WORDS>(addr[range<CLOG2(N/8), N-1>()]));
     bvec<CLOG2(N)> memshift(Lit<CLOG2(N)>(8) *
                               Zext<CLOG2(N)>(addr[range<0, CLOG2(N/8)-1>()]));
-
-	vec<Q, mshrld> ldq;
-	vec<Q, mshrst > stq;
 	
-	vec<Q, bvec<N> > stqData;
-	bvec<Q> ldqFree;
-	for(int i=0; i<Q; i++)
-	{
-		stqData[i] = stq[i].data;
-		ldqFree[i] = ldq[i].free;
-	}
-	chdl::node ldqFreeFlag = OrN(ldqFree);
-
-	//write to empty MSHR
+	//insert to empty MSHR
 	////////////////////////////////////////////////
 	// load queue
-	chdl::node resetReg;
-	chdl::node reset = !resetReg;
-	bvec<Q> ldqDone;
-	resetReg = Reg(Lit(1));
-	bvec<CLOG2(Q)> freeldqidx= Log2(ldqFree);
-	chdl::node ldqAvailable = OrN(ldqFree);
-	chdl::node ldqEmpty = AndN(ldqFree);
-	chdl::node stqEnable = valid && !op[0] && isReady;
-	chdl::node ldqEnable = valid && op[0] && isReady;
-	bvec<Q> ldqInsert = Decoder(freeldqidx, ldqEnable);
-	bvec<Q> ldqPending;
-	bvec<Q> returnSelect = Decoder(returnqid, memvalid); //have to move returnqid up here
+	node memvalid;					//data from mem is valid 
+	node readyToCommit; 			//have loaded ldq entry for commit
+	node stqEnable, ldqEnable;  	//write enable for insertion
+	bvec<CLOG2(Q)> freeldqidx, returnqidx; //qid of data from mem
+	bvec<Q> ldqFree, ldqDone, ldqInsert, ldqPending, returnSelect, ldqLoaded;
+	vec<Q, bvec<N> > ldqData;
+	vec<Q, bvec<CLOG2(R)> > ldqdidx;
+	vec<Q, bvec<IDLEN> > ldqiid;
+    vec<Q, bvec<L2WORDS> > ldqMemaddr;
+	bvec<L2WORDS> ldqMemaddrOut; 
+
+	stqEnable = valid && !op[0] && isReady;
+	ldqEnable = valid && op[0] && isReady;
+	freeldqidx= Log2(ldqFree);
+	node ldqAvailable = OrN(ldqFree);
+	node ldqEmpty = AndN(ldqFree);
+	ldqInsert = Decoder(freeldqidx, ldqEnable);
+	returnSelect = Decoder(returnqidx, memvalid); 
 	for(int i=0; i<Q; ++i)
 	{
-		ldq[i].free = Wreg(reset || (ldqInsert[i]) || ldqDone[i] || returnSelect[i], reset || ldqDone[i] || (returnSelect[i] && !readyToCommit) );	//ldqDone[i] should always be 0 on MSHR insert, how to set w/o ldqDone and readyToCommit?
-		ldq[i].memaddr= Wreg<L2WORDS>(ldqInsert[i], memaddr);
-		ldq[i].iid = Wreg(ldqInsert[i], in.iid);
-		ldq[i].didx = Wreg(ldqInsert[i], in.didx);
+		ldqFree[i] = Wreg(reset || (ldqInsert[i]) || ldqDone[i] || returnSelect[i], 
+						reset || ldqDone[i] || (returnSelect[i] && !readyToCommit) );
+		ldqMemaddr[i] = Wreg<L2WORDS>(ldqInsert[i], memaddr);
+		ldqiid[i] = Wreg(ldqInsert[i], in.iid);
+		ldqdidx[i] = Wreg(ldqInsert[i], in.didx);
 
 		ostringstream oss;
 		oss << "ldq" << i << ".memaddr";
@@ -299,31 +299,40 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	TAP(ldqInsert);
 	TAP(valid); TAP(op);
 	TAP(ldqDone);
+	TAP(ldqFree);
 	TAP(memaddr);
 
 
 	// store queue 
-	bvec<Q> stqWaiting, stqValid;
-	chdl::node sendldreq=Lit(1), sendstreq(0);
+	//////////////////////////////////////////////////////////
+	node dependentLd;
+	node sendldreq, sendstreq;
+	node stqReq, validStqReq; 		//output to memory arbitration select signal
+	bvec<Q> stqInsert, stqWaiting, stqValid, clearWait, stqTailSelect;
+	vec<Q, bvec<N> > stqData;
+	vec<Q, bvec<IDLEN> > stqiid;
+	vec<Q, bvec<CLOG2(R)> > stqdidx, stqWaitidx;
+	vec< Q, bvec<L2WORDS> > stqMemaddr;
 	bvec<CLOG2(Q)+1> stqSize;
 	bvec<CLOG2(Q)> head, tail;
-	chdl::node stqReq; 			//only when memory commit arbitration decides
-	chdl::node dependentLd;
-	tail = Wreg(stqReq && Mux(tail, stqValid), tail+Lit<3>(1) );	//only on successful commit to memory
-	head = Wreg(stqEnable, head+Lit<3>(1) ); //only on valid st requests 
-	chdl::node validStReq = stqReq && Mux(tail, stqValid);
-	stqSize = Wreg( Xor(stqEnable, validStReq), Mux(validStReq, stqSize+Lit<CLOG2(Q)+1>(1), stqSize+Lit<CLOG2(Q)+1>(0xF)) ); // take stall into account?
+
+	//head/tail pointers into stq
+	validStqReq = stqReq && Mux(tail, stqValid);
+	tail = Wreg(validStqReq, tail+Lit<3>(1) ); 
+	head = Wreg(stqEnable, head+Lit<3>(1) ); 
+	stqSize = Wreg( Xor(stqEnable, validStqReq), 
+			Mux(validStqReq, stqSize+Lit<CLOG2(Q)+1>(1), 
+			stqSize+Lit<CLOG2(Q)+1>(0xF)) ); // take stall into account?
 
 	TAP(stqSize); TAP(tail); TAP(head);
 	TAP(stqValid); TAP(stqEnable); TAP(stqReq);
-	TAP(validStReq);
-	//LSF and WAR hazard detection
-	//find matching addr in store queue
-	chdl::bvec<Q> WARaddrMatch, LSFaddrMatch, ldqMatch, stqMatch;
+	TAP(validStqReq);
+
+	//Load Store Forwarding (LSF) and WAR hazard detection
+	node enableLSF;
+	bvec<Q> WARaddrMatch, LSFaddrMatch, ldqMatch, stqMatch;
 	bvec<N> stqLSFData = Mux(Enc(LSFaddrMatch), stqData);
-	TAP(stqLSFData); TAP(ldqFree);
 	
-	bvec<L2WORDS> ldqMemaddrOut; 
 	for(int i=0; i<Q; ++i)
 	{
 		WARaddrMatch[i] = memaddr == ldq[i].memaddr;	
@@ -332,73 +341,58 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		LSFaddrMatch[i] = (memaddr == stq[i].memaddr);
 		stqMatch[i] = LSFaddrMatch[i] && stq[i].valid;	
 	}
+	//WAR detection
 	bvec<CLOG2(Q)> dependentLdidx = Enc(ldqMatch);
 	dependentLd = OrN(WARaddrMatch) && ldqMemaddrOut != memaddr;
-	bvec<Q> stqInsert= Decoder(head, stqEnable);
+	stqInsert = Decoder(head, stqEnable);
+	//LSF detection
+	enableLSF = OrN(stqMatch);
+	stqLSFData = Mux(Enc(LSFaddrMatch), stqData);
 
-	chdl::node enableLSF = OrN(stqMatch);
-	//bvec<CLOG2(Q)> lsfLoadidx = Enc(LSFaddrMatch);	//what happens if more than 1 matching store?
-	bvec<Q> ldqLSF;
-	bvec<Q> stqTailSelect = Decoder(tail, sendstreq);
-	bvec<Q> clearWait;
 	for(int i=0; i<Q; ++i)
 	{
-		ldqLSF[i] = stqMatch[i] && enableLSF;
-
-		stq[i].iid = Wreg(stqInsert[i], in.iid);
-		stq[i].memaddr = Wreg<L2WORDS>(stqInsert[i], memaddr);
-		stq[i].data = Wreg<N>(stqInsert[i], r0);
-		clearWait[i] = Mux(stq[i].waitidx, ldqPending);
-		stq[i].waiting = Wreg(stqInsert[i] || !clearWait[i], dependentLd && stqInsert[i]); 
-		stq[i].waitidx = Wreg(stqInsert[i], dependentLdidx);
-		stq[i].valid = Wreg(stqInsert[i] || (stqTailSelect[i]), stqInsert[i]);//and what clears it?
+		stqMemaddr[i] = Wreg<L2WORDS>(stqInsert[i], memaddr);
+		stqData[i] = Wreg<N>(stqInsert[i], r0);
+		stqiid[i] = Wreg(stqInsert[i], in.iid);
+		clearWait[i] = Mux(stqWaitidx[i], ldqPending);
+		stqWaiting[i] = Wreg(stqInsert[i] || !clearWait[i], dependentLd && stqInsert[i]); 
+		stqWaitidx[i] = Wreg(stqInsert[i], dependentLdidx);
+		stqValid[i] = Wreg(stqInsert[i] || (stqTailSelect[i]), stqInsert[i]);//what clears it?
 	}
 
 	TAP(LSFaddrMatch); TAP(stqMatch);
 	TAP(WARaddrMatch); TAP(ldqMatch);
-//*/
+	TAP(stqLSFData); 
 
 	//send req to memory
 	////////////////////////////////////////////////
-	
-	chdl::node memStall = Lit(0);
-	vec<Q, bvec<CLOG2(R)> > stqdidx, ldqdidx;
-	vec<Q, bvec<IDLEN> > stqiid, ldqiid;
-	vec< Q, bvec<L2WORDS> > stqMemaddr, ldqMemaddr;
-	
+	node memStall = Lit(0);
 	bvec<CLOG2(Q)> pendingldqidx = Log2(ldqPending);
-	chdl::node ldqPendingFlag = OrN(ldqPending);
+	node ldqPendingFlag = OrN(ldqPending);
 	bvec<Q> ldqReq = Decoder(pendingldqidx, ldqPendingFlag);
 
 	for(int i=0; i<Q; ++i)
 	{
-		ldqPending[i] = ldq[i].pending;
-		ldq[i].pending = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF && !ldqEmpty) );
-
-		ldqMemaddr[i] = ldq[i].memaddr;
-		ldqiid[i] = ldq[i].iid;
-		ldqdidx[i] = ldq[i].didx;
-
-		stqMemaddr[i] = stq[i].memaddr;
-		stqData[i] = stq[i].data;
-		stqiid[i] = stq[i].iid;
-		stqdidx[i] = stq[i].didx;
-		stqWaiting[i] = stq[i].waiting;
-		stqValid[i] = stq[i].valid;
+		//ldqPending[i] = 1 when: on insert 
+		//ldqPending[i] = 0 when: sent to memory, bypass, or memStall
+		// bypass occurs when ldqEmpty or no ldqPending
+		ldqPending[i] = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF && !ldqEmpty && !ldqPendingFlag && memStall) );
 	}
 	
 	//loading data (from memory or st forwarding)
 	////////////////////////////////////////////////
 	
 	//always send ld req unless store queue is full, but not if head store depends on a pending ld
-	chdl::node WARexists = Mux(tail, stqWaiting);
+	node WARexists = Mux(tail, stqWaiting);
 	sendldreq = !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || ldqEmpty);
 	sendstreq = !sendldreq;
+
+	stqTailSelect = Decoder(tail, sendstreq);
 
 	ldqMemaddrOut = Mux(ldqEmpty && !enableLSF, Mux(pendingldqidx, ldqMemaddr), memaddr);
 	bvec<L2WORDS> stqMemaddrOut = Mux(tail, stqMemaddr);
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
-	chdl::node memValidOut = ldqPendingFlag || Mux(tail, stqValid);
+	node memValidOut = ldqPendingFlag || Mux(tail, stqValid);
 
 	TAP(ldqPending);
 	TAP(memaddrOut);
@@ -410,36 +404,33 @@ template <unsigned N, unsigned R, unsigned SIZE>
 //*/
 	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
 	bvec<N> memDataIn = delay(sramout, DELAY);
-	bvec<CLOG2(Q)> returnqidx = delay(pendingldqidx, DELAY);
-	chdl::node memvalid = delay(ldqPendingFlag, DELAY);
+	returnqidx = delay(pendingldqidx, DELAY);
+	memvalid = delay(ldqPendingFlag, DELAY);
 	//memStall = sramout[8];
 
 	bvec<Q> ldqReturn = Decoder(returnqidx, memvalid);
-	chdl::node readyToCommit = OrN(ldqDone);
+	readyToCommit = OrN(ldqDone);
 	
 	for(int i=0; i<Q; ++i)
 	{	
-		ldq[i].loaded = Wreg( ldqInsert[i] || ldqDone[i] || (ldqReturn[i] && memvalid), (ldqReturn[i] && memvalid && readyToCommit) || (ldqInsert[i] && enableLSF) );
-		ldq[i].data = Wreg<N>( (ldqReturn[i] && memvalid) || ldqInsert[i], Mux(ldqInsert[i], memDataIn, stqLSFData) );	//loads from store at insertion regardless of LSF is enabled, is this a problem?
+		ldqLoaded = Wreg( ldqInsert[i] || ldqDone[i] || (ldqReturn[i] && memvalid), (ldqReturn[i] && memvalid && readyToCommit) || (ldqInsert[i] && enableLSF) );
+		ldqData = Wreg<N>( (ldqReturn[i] && memvalid) || ldqInsert[i], Mux(ldqInsert[i], memDataIn, stqLSFData) );	//loads from store at insertion regardless of LSF is enabled, is this a problem?
 	}
 
-	TAP(ldqLSF);
 	TAP(pendingldqidx); TAP(returnqidx);
 	TAP(memvalid); TAP(ldqPendingFlag);
 	TAP(ldqReturn);
 	//commit 
 	///////////////////////////////////////////////////
-	bvec<Q> ldqLoaded;
-	vec<Q, bvec<N> > ldqData;
 	for(int i=0; i<Q; ++i)
 	{
 		ldqLoaded[i] = ldq[i].loaded;
 		ldqData[i] = ldq[i].data;
 	}
 
-	chdl::node regStall = Reg(in.stall);	
+	node regStall = Reg(in.stall);	
 	bvec<CLOG2(Q)> loadedldqidx = Log2(ldqLoaded);
-	chdl::node ldqLoadedFlag = OrN(ldqLoaded);
+	node ldqLoadedFlag = OrN(ldqLoaded);
 	bvec<Q> ldqCommit = Decoder(loadedldqidx, ldqLoadedFlag);
 
 	for(int i=0; i<Q; ++i)
