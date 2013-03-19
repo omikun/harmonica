@@ -23,8 +23,8 @@
 #include <chdl/netlist.h>
 
 static const unsigned IDLEN(6);
-static const unsigned Q(8);
-static const unsigned DELAY(12);
+static const unsigned Q(4);
+static const unsigned DELAY(5);
 
 template <unsigned N, unsigned R> struct fuInput {
   chdl::bvec<N> r0, r1, r2, imm, pc;
@@ -307,26 +307,29 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	//////////////////////////////////////////////////////////
 	node dependentLd;
 	node sendldreq, sendstreq;
-	node stqReq, validStqReq; 		//output to memory arbitration select signal
+	node validStqReq; 		//output to memory arbitration select signal
 	bvec<Q> stqInsert, stqWaiting, stqValid, clearWait, stqTailSelect;
 	vec<Q, bvec<N> > stqData;
 	vec<Q, bvec<IDLEN> > stqiid;
-	vec<Q, bvec<CLOG2(R)> > stqdidx, stqWaitidx;
+	vec<Q, bvec<CLOG2(R)> > stqdidx;
+	vec<Q, bvec<CLOG2(Q)> > stqWaitidx;
 	vec< Q, bvec<L2WORDS> > stqMemaddr;
 	bvec<CLOG2(Q)+1> stqSize;
 	bvec<CLOG2(Q)> head, tail;
 
 	//head/tail pointers into stq
-	validStqReq = stqReq && Mux(tail, stqValid);
-	tail = Wreg(validStqReq, tail+Lit<3>(1) ); 
-	head = Wreg(stqEnable, head+Lit<3>(1) ); 
+	validStqReq = sendstreq && Mux(tail, stqValid);
+	tail = Wreg(validStqReq, tail+Lit<CLOG2(Q)>(1) ); 
+	head = Wreg(stqEnable, head+Lit<CLOG2(Q)>(1) ); 
 	stqSize = Wreg( Xor(stqEnable, validStqReq), 
 			Mux(validStqReq, stqSize+Lit<CLOG2(Q)+1>(1), 
 			stqSize+Lit<CLOG2(Q)+1>(0xF)) ); // take stall into account?
 
 	TAP(stqSize); TAP(tail); TAP(head);
-	TAP(stqValid); TAP(stqEnable); TAP(stqReq);
+	TAP(stqValid); TAP(stqEnable); 
 	TAP(validStqReq);
+	node stqValidReady = (Mux(tail, stqValid) );
+	TAP(stqValidReady);
 
 	//Load Store Forwarding (LSF) and WAR hazard detection
 	node enableLSF;
@@ -356,19 +359,20 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		stqiid[i] = Wreg(stqInsert[i], in.iid);
 		clearWait[i] = Mux(stqWaitidx[i], ldqPending);
 		stqWaiting[i] = Wreg(stqInsert[i] || !clearWait[i], dependentLd && stqInsert[i]); 
-		stqWaitidx[i] = Wreg(stqInsert[i], dependentLdidx);
+		stqWaitidx[i] = Wreg<CLOG2(Q)>(stqInsert[i], dependentLdidx);
 		stqValid[i] = Wreg(stqInsert[i] || (stqTailSelect[i]), stqInsert[i]);//what clears it?
 	}
 
 	TAP(LSFaddrMatch); TAP(stqMatch);
 	TAP(WARaddrMatch); TAP(ldqMatch);
 	TAP(stqLSFData); 
+	TAP(stqTailSelect); TAP(stqInsert);
 
 	//send req to memory
 	////////////////////////////////////////////////
 	node memStall = Lit(0);
-	bvec<CLOG2(Q)> pendingldqidx = Log2(ldqPending);
 	node ldqPendingFlag = OrN(ldqPending);
+	bvec<CLOG2(Q)> pendingldqidx = Mux(ldqPendingFlag, freeldqidx, Log2(ldqPending) );
 	bvec<Q> ldqReq = Decoder(pendingldqidx, ldqPendingFlag);
 
 	for(int i=0; i<Q; ++i)
@@ -376,23 +380,21 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		//ldqPending[i] = 1 when: on insert 
 		//ldqPending[i] = 0 when: sent to memory, bypass, or memStall
 		// bypass occurs when ldqEmpty or no ldqPending
-		ldqPending[i] = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF && !ldqEmpty && !ldqPendingFlag && memStall) );
+		ldqPending[i] = Wreg( (ldqInsert[i] ) || (ldqReq[i] && sendldreq && !memStall), (ldqInsert[i] && !enableLSF && !ldqPendingFlag && memStall) );
 	}
 	
 	//loading data (from memory or st forwarding)
 	////////////////////////////////////////////////
-	
-	//always send ld req unless store queue is full, but not if head store depends on a pending ld
 	node WARexists = Mux(tail, stqWaiting);
-	sendldreq = !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || ldqEmpty);
-	sendstreq = !sendldreq;
+	sendldreq = (ldqEnable || !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || !ldqPendingFlag) ) ;//TODO should this be included? && !memStall;
+	sendstreq = !sendldreq && !memStall;
 
 	stqTailSelect = Decoder(tail, sendstreq);
 
-	ldqMemaddrOut = Mux(ldqEmpty && !enableLSF, Mux(pendingldqidx, ldqMemaddr), memaddr);
+	ldqMemaddrOut = Mux(!ldqPendingFlag && !enableLSF, Mux(pendingldqidx, ldqMemaddr), memaddr);
 	bvec<L2WORDS> stqMemaddrOut = Mux(tail, stqMemaddr);
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
-	node memValidOut = ldqPendingFlag || Mux(tail, stqValid);
+	node memValidOut = ldqEnable || ldqPendingFlag || Mux(tail, stqValid); 
 
 	TAP(ldqPending);
 	TAP(memaddrOut);
@@ -402,10 +404,11 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	//TESTING PURPOSE ONLY; MUST CHANGE WHEN INTERFACING WITH MEMORY
 	//bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
 //*/
+//TODO: must add latch to memory output
 	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
 	bvec<N> memDataIn = delay(sramout, DELAY);
 	returnqidx = delay(pendingldqidx, DELAY);
-	memvalid = delay(ldqPendingFlag, DELAY);
+	memvalid = delay(ldqEnable || ldqPendingFlag, DELAY);
 	//memStall = sramout[8];
 
 	bvec<Q> ldqReturn = Decoder(returnqidx, memvalid);
@@ -418,7 +421,9 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	}
 
 	TAP(pendingldqidx); TAP(returnqidx);
-	TAP(memvalid); TAP(ldqPendingFlag);
+	TAP(memvalid); 
+	TAP(memValidOut); 
+	TAP(ldqPendingFlag);
 	TAP(ldqReturn);
 	//commit 
 	///////////////////////////////////////////////////
@@ -497,3 +502,4 @@ template <unsigned N, unsigned R, unsigned SIZE>
 #endif
 
 #endif
+
