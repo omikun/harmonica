@@ -21,6 +21,15 @@
 #include <chdl/tap.h>
 #include <chdl/sim.h>
 #include <chdl/netlist.h>
+#include <chdl/input.h>
+
+#define PROTOTYPE 0
+
+#ifdef DEBUG
+#define DBGTAP(x) do {TAP(x); } while(0)
+#else
+#define DBGTAP(x) do {} while(0)
+#endif
 
 static const unsigned IDLEN(6);
 static const unsigned Q(4);
@@ -387,7 +396,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	////////////////////////////////////////////////
 	node WARexists = Mux(tail, stqWaiting);
 	sendldreq = (ldqEnable || !( ( (stqSize == Lit<CLOG2(Q)+1>(Q)) && !WARexists) || !ldqPendingFlag) ) ;//TODO should this be included? && !memStall;
-	sendstreq = !sendldreq && !memStall;
+	sendstreq = !sendldreq && !memStall;//should memstall be taken in to account?
 
 	stqTailSelect = Decoder(tail, sendstreq);
 
@@ -395,6 +404,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	bvec<L2WORDS> stqMemaddrOut = Mux(tail, stqMemaddr);
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
 	node memValidOut = ldqEnable || ldqPendingFlag || Mux(tail, stqValid); 
+	node memWrite = Mux(tail, stqValid) && sendstreq;
 
 	DBGTAP(ldqPending);
 	DBGTAP(memaddrOut);
@@ -405,13 +415,23 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	//bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
 //*/
 //TODO: must add latch to memory output
-	bvec<N> sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
-	bvec<N> memDataIn = delay(sramout, DELAY);
+	bvec<N> sramout, memDataIn;
+	bvec<Q> ldqReturn;	
+#if PROTOTYPE
+	sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
+	memDataIn = delay(sramout, DELAY);
 	returnqidx = delay(pendingldqidx, DELAY);
-	memvalid = delay(ldqEnable || ldqPendingFlag, DELAY);
+	memvalid = delay(memValidOut, DELAY);
 	//memStall = sramout[8];
 
-	bvec<Q> ldqReturn = Decoder(returnqidx, memvalid);
+	ldqReturn = Decoder(returnqidx, memvalid);
+#else
+	sramout = Input<N>("memDataIn"); 
+	returnqidx = Input<CLOG2(Q)>("memqidIn"); 
+	memvalid = Input("memValidIn");
+	TAP(memaddrOut); TAP(memWrite); TAP(memValidOut); TAP(pendingldqidx); 
+#endif
+
 	readyToCommit = OrN(ldqDone);
 	
 	for(int i=0; i<Q; ++i)
