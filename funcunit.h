@@ -294,13 +294,13 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		tap(oss.str(), ldq[i].memaddr);
 	}
 
-	TAP(reset); TAP(resetReg);
-	TAP(ldqAvailable); TAP(ldqEnable);
-	TAP(ldqInsert);
-	TAP(valid); TAP(op);
-	TAP(ldqDone);
-	TAP(ldqFree);
-	TAP(memaddr);
+	DBGTAP(reset); DBGTAP(resetReg);
+	DBGTAP(ldqAvailable); DBGTAP(ldqEnable);
+	DBGTAP(ldqInsert);
+	DBGTAP(valid); DBGTAP(op);
+	DBGTAP(ldqDone);
+	DBGTAP(ldqFree);
+	DBGTAP(memaddr);
 
 
 	// store queue 
@@ -325,11 +325,11 @@ template <unsigned N, unsigned R, unsigned SIZE>
 			Mux(validStqReq, stqSize+Lit<CLOG2(Q)+1>(1), 
 			stqSize+Lit<CLOG2(Q)+1>(0xF)) ); // take stall into account?
 
-	TAP(stqSize); TAP(tail); TAP(head);
-	TAP(stqValid); TAP(stqEnable); 
-	TAP(validStqReq);
+	DBGTAP(stqSize); DBGTAP(tail); DBGTAP(head);
+	DBGTAP(stqValid); DBGTAP(stqEnable); 
+	DBGTAP(validStqReq);
 	node stqValidReady = (Mux(tail, stqValid) );
-	TAP(stqValidReady);
+	DBGTAP(stqValidReady);
 
 	//Load Store Forwarding (LSF) and WAR hazard detection
 	node enableLSF;
@@ -363,10 +363,10 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		stqValid[i] = Wreg(stqInsert[i] || (stqTailSelect[i]), stqInsert[i]);//what clears it?
 	}
 
-	TAP(LSFaddrMatch); TAP(stqMatch);
-	TAP(WARaddrMatch); TAP(ldqMatch);
-	TAP(stqLSFData); 
-	TAP(stqTailSelect); TAP(stqInsert);
+	DBGTAP(LSFaddrMatch); DBGTAP(stqMatch);
+	DBGTAP(WARaddrMatch); DBGTAP(ldqMatch);
+	DBGTAP(stqLSFData); 
+	DBGTAP(stqTailSelect); DBGTAP(stqInsert);
 
 	//send req to memory
 	////////////////////////////////////////////////
@@ -396,10 +396,10 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	bvec<L2WORDS> memaddrOut = Mux(sendldreq, stqMemaddrOut, ldqMemaddrOut);
 	node memValidOut = ldqEnable || ldqPendingFlag || Mux(tail, stqValid); 
 
-	TAP(ldqPending);
-	TAP(memaddrOut);
-	TAP(sendldreq); TAP(sendstreq);
-	TAP(stqWaiting);
+	DBGTAP(ldqPending);
+	DBGTAP(memaddrOut);
+	DBGTAP(sendldreq); DBGTAP(sendstreq);
+	DBGTAP(stqWaiting);
 	
 	//TESTING PURPOSE ONLY; MUST CHANGE WHEN INTERFACING WITH MEMORY
 	//bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
@@ -420,11 +420,11 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		ldqData = Wreg<N>( (ldqReturn[i] && memvalid) || ldqInsert[i], Mux(ldqInsert[i], memDataIn, stqLSFData) );	//loads from store at insertion regardless of LSF is enabled, is this a problem?
 	}
 
-	TAP(pendingldqidx); TAP(returnqidx);
-	TAP(memvalid); 
-	TAP(memValidOut); 
-	TAP(ldqPendingFlag);
-	TAP(ldqReturn);
+	DBGTAP(pendingldqidx); DBGTAP(returnqidx);
+	DBGTAP(memvalid); 
+	DBGTAP(memValidOut); 
+	DBGTAP(ldqPendingFlag);
+	DBGTAP(ldqReturn);
 	//commit 
 	///////////////////////////////////////////////////
 	for(int i=0; i<Q; ++i)
@@ -444,7 +444,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	}
 
 	isReady = ldqAvailable && stqSize != Lit<CLOG2(Q)+1>(Q); // && stqAvailable or stqSize > 0
-	TAP(isReady);
+	DBGTAP(isReady);
 
 #if 1
     o.out = Mux(readyToCommit, memDataIn, Mux(loadedldqidx, ldqData));
@@ -459,14 +459,14 @@ template <unsigned N, unsigned R, unsigned SIZE>
 #endif 
 	o.pdest = PipelineReg(3, in.pdest);
 
-	//TAP(ldqData);
-	TAP(o.out);
-	TAP(o.iid);
-	TAP(o.didx);
-	TAP(ldqLoadedFlag);
-	TAP(ldqLoaded);
-	TAP(regStall);
-	TAP(ldqCommit);
+	//DBGTAP(ldqData);
+	DBGTAP(o.out);
+	DBGTAP(o.iid);
+	DBGTAP(o.didx);
+	DBGTAP(ldqLoadedFlag);
+	DBGTAP(ldqLoaded);
+	DBGTAP(regStall);
+	DBGTAP(ldqCommit);
 	return o;
   }
 };
