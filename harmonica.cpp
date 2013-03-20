@@ -49,6 +49,9 @@ using namespace chdl;
 #include "fpu.h"
 #include "regfile.h"
 
+#if 1
+#include "bpred.h"
+#else
 // This is the basic design for the branch prediction module. Given the current
 // fetch PC, this unit has to determine the next PC at which to fetch. When
 // jumps are taken and resolved, the "jmpPc" and "takenJmp" signals are
@@ -60,6 +63,7 @@ template <unsigned LAT, unsigned N>
   flushOut = takenJmp;
   return Mux(takenJmp, Mux(stall, pc + Lit<N>(N/8), pc), jmpPc);
 }
+#endif
 
 template <unsigned N> bvec<N> InstructionMemory(bvec<N> addr) {
   // Stall every tenth cycle, simulating, e.g., icache misses.

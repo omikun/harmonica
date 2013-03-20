@@ -22,7 +22,8 @@ harmonica.nand harmonica.vcd : harmonica rom.hex
 harmonica: harmonica.o pipeline.o
 
 harmonica.o : harmonica.cpp pipeline.h funcunit.h harpinst.h \
-              regfile.h fpu.h
+              regfile.h fpu.h bpred.h
+
 pipeline.o  : pipeline.cpp pipeline.h
 
 rom.hex : rom.bin
