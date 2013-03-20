@@ -27,7 +27,8 @@ template <unsigned M, unsigned N, unsigned R, unsigned L>
   vec<L, vec<SIZE, bvec<N>>> regs;
   for (unsigned j = 0; j < L; ++j) {
     for (unsigned i = 0; i < SIZE; ++i) {
-      regs[j][i] = Wreg(wrsig[i] && w.we[j], w.d[j]);
+      unsigned long initialval(i == 0 ? j : 0);
+      regs[j][i] = Wreg(wrsig[i] && w.we[j], w.d[j], initialval);
       #ifdef DEBUG
       ostringstream oss;
       oss << prefix << "reg" << j << i;
@@ -59,7 +60,8 @@ template <unsigned M, unsigned R>
 
   vec<SIZE, bvec<1>> bits;
   for (unsigned i = 0; i < SIZE; ++i) {
-    bits[i] = Wreg(setsig[i]||clearsig[i], bvec<1>(setsig[i] && !clearsig[i]));
+    bits[i] =
+      Wreg(setsig[i]||clearsig[i], bvec<1>(setsig[i] && !clearsig[i]), 1);
     #ifdef DEBUG
     ostringstream oss;
     oss << prefix << "vreg" << i;
