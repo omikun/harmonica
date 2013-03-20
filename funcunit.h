@@ -23,7 +23,8 @@
 #include <chdl/netlist.h>
 #include <chdl/input.h>
 
-#define PROTOTYPE 0
+#define PROTOTYPE 1
+#define blah
 
 #ifdef DEBUG
 #define DBGTAP(x) do {TAP(x); } while(0)
@@ -370,6 +371,8 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		stqWaiting[i] = Wreg(stqInsert[i] || !clearWait[i], dependentLd && stqInsert[i]); 
 		stqWaitidx[i] = Wreg<CLOG2(Q)>(stqInsert[i], dependentLdidx);
 		stqValid[i] = Wreg(stqInsert[i] || (stqTailSelect[i]), stqInsert[i]);//what clears it?
+
+		TAP(stqData[i]);
 	}
 
 	DBGTAP(LSFaddrMatch); DBGTAP(stqMatch);
@@ -418,8 +421,8 @@ template <unsigned N, unsigned R, unsigned SIZE>
 	bvec<N> sramout, memDataIn;
 	bvec<Q> ldqReturn;	
 #if PROTOTYPE
-	sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut, "data.hex");
-	memDataIn = delay(sramout, DELAY);
+	sramout = Syncmem(memaddrOut, Mux(tail, stqData), memValidOut);
+	memDataIn = delay(sramout, DELAY-1);
 	returnqidx = delay(pendingldqidx, DELAY);
 	memvalid = delay(memValidOut, DELAY);
 	//memStall = sramout[8];
@@ -440,6 +443,7 @@ template <unsigned N, unsigned R, unsigned SIZE>
 		ldqData = Wreg<N>( (ldqReturn[i] && memvalid) || ldqInsert[i], Mux(ldqInsert[i], memDataIn, stqLSFData) );	//loads from store at insertion regardless of LSF is enabled, is this a problem?
 	}
 
+	DBGTAP(memDataIn); DBGTAP(sramout);
 	DBGTAP(pendingldqidx); DBGTAP(returnqidx);
 	DBGTAP(memvalid); 
 	DBGTAP(memValidOut); 
