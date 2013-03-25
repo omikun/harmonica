@@ -49,7 +49,7 @@ using namespace chdl;
 #include "fpu.h"
 #include "regfile.h"
 
-#if 1
+#if 0
 #include "bpred.h"
 #else
 // This is the basic design for the branch prediction module. Given the current
