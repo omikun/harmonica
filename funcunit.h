@@ -23,6 +23,8 @@
 #include <chdl/netlist.h>
 #include <chdl/hierarchy.h>
 
+#include <chdl/statemachine.h>
+
 static const unsigned IDLEN(6);
 
 template <unsigned N, unsigned R, unsigned L> struct fuInput {
@@ -65,8 +67,8 @@ template <unsigned N, unsigned R, unsigned L>
   std::vector<unsigned> get_opcodes() {
     std::vector<unsigned> ops;
 
-    for (unsigned i = 0x05; i <= 0x0b; ++i) ops.push_back(i); // 0x05 - 0x0b
-    for (unsigned i = 0x0f; i <= 0x15; ++i) ops.push_back(i); // 0x0f - 0x15
+    for (unsigned i = 0x05; i <= 0x0c; ++i) ops.push_back(i); // 0x05 - 0x0c
+    for (unsigned i = 0x0f; i <= 0x16; ++i) ops.push_back(i); // 0x0f - 0x16
     for (unsigned i = 0x19; i <= 0x1c; ++i) ops.push_back(i); // 0x19 - 0x1c
     ops.push_back(0x25);
 
@@ -89,6 +91,7 @@ template <unsigned N, unsigned R, unsigned L>
       bvec<N> a(in.r0[i]), b(Mux(in.hasimm, in.r1[i], in.imm));
 
       bvec<N> sum(Adder(a, Mux(in.op[0], b, ~b), in.op[0]));
+      bvec<N> prod(a * b);
 
       vec<64, bvec<N>> mux_in;
       mux_in[0x05] = -a;
@@ -98,6 +101,7 @@ template <unsigned N, unsigned R, unsigned L>
       mux_in[0x09] = a ^ b;
       mux_in[0x0a] = sum;
       mux_in[0x0b] = sum;
+      mux_in[0x0c] = prod;
       mux_in[0x0f] = a << Zext<CLOG2(N)>(b);
       mux_in[0x10] = a >> Zext<CLOG2(N)>(b);
       mux_in[0x11] = mux_in[0x07];
@@ -105,6 +109,7 @@ template <unsigned N, unsigned R, unsigned L>
       mux_in[0x13] = mux_in[0x09];
       mux_in[0x14] = sum;
       mux_in[0x15] = sum;
+      mux_in[0x16] = prod;
       mux_in[0x19] = mux_in[0x0f];
       mux_in[0x1a] = mux_in[0x10];
       mux_in[0x1b] = in.pc;
@@ -245,6 +250,136 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
     return o;
   }
  private:
+};
+
+template <unsigned N, bool D>
+  chdl::bvec<N> Shiftreg(
+    chdl::bvec<N> in, chdl::node load, chdl::node shift, chdl::node shin
+  )
+{
+  using namespace chdl;
+  using namespace std;
+
+  HIERARCHY_ENTER();  
+
+  bvec<N+1> val;
+  val[D?N:0] = shin;
+
+  if (D) {
+    for (int i = N-1; i >= 0; --i)
+      val[i] = Reg(Mux(load, Mux(shift, val[i], val[i+1]), in[i]));
+    HIERARCHY_EXIT();
+    return val[range<0, N-1>()];
+  } else {
+    for (unsigned i = 1; i < N; ++i)
+      val[i] = Reg(Mux(load, Mux(shift, val[i], val[i-1]), in[i-1]));
+    HIERARCHY_EXIT();
+    return val[range<1, N>()];
+  }
+}
+
+template <unsigned N>
+  chdl::bvec<N> Rshiftreg(
+    chdl::bvec<N> in, chdl::node load, chdl::node shift,
+    chdl::node shin = chdl::Lit(0)
+  )
+{ return Shiftreg<N, true>(in, load, shift, shin); }
+
+template <unsigned N>
+  chdl::bvec<N> Lshiftreg(
+    chdl::bvec<N> in, chdl::node load, chdl::node shift,
+    chdl::node shin = chdl::Lit(0)
+  )
+{ return Shiftreg<N, false>(in, load, shift, shin); }
+
+template <unsigned N>
+  void Serdiv(
+    chdl::bvec<N> &q, chdl::bvec<N> &r, chdl::node &ready, chdl::node &waiting,
+    chdl::bvec<N> n, chdl::bvec<N> d, chdl::node v, chdl::node stall
+  )
+{
+  using namespace std;
+  using namespace chdl;
+
+  // The controller
+  Statemachine<N+3> sm;
+  bvec<CLOG2(N+3)> state(sm);
+  sm.edge(0, 0, !v);
+  sm.edge(0, 1, v);
+  for (unsigned i = 1; i < N+2; ++i)
+    sm.edge(i, i+1, Lit(1));
+  sm.edge(N+2, 0, !stall);
+  sm.generate();
+  static bool copy = false;
+  if (!copy) {
+    copy = true;
+    tap("div_n", Wreg(v, n));
+    tap("div_d", Wreg(v, d));
+    tap("div_state", state);
+  }
+  ready = (bvec<CLOG2(N+3)>(sm) == Lit<CLOG2(N+3)>(N+2));
+  waiting = (bvec<CLOG2(N+3)>(sm) == Lit<CLOG2(N+3)>(0));
+
+  // The data path
+  bvec<2*N> s(Rshiftreg(Cat(d, Lit<N>(0)), v, Lit(1)));
+  node qbit(Cat(Lit<N>(0), r) >= s);
+  r = Reg(Mux(v, Mux(qbit, r, r - s[range<0, N-1>()]), n));
+  q = Lshiftreg(Lit<N>(0), v, !ready, qbit);
+}
+
+template <unsigned N, unsigned R, unsigned L>
+  class SerialDivider : public FuncUnit<N, R, L>
+{
+ public:
+  std::vector<unsigned> get_opcodes() {
+    std::vector<unsigned> ops;
+
+    ops.push_back(0x0d);
+    ops.push_back(0x0e);
+    ops.push_back(0x17);
+    ops.push_back(0x18);
+
+    return ops;
+  }
+
+  virtual fuOutput<N, R, L> generate(fuInput<N, R, L> in, chdl::node valid) {
+    using namespace std;
+    using namespace chdl;
+
+    hierarchy_enter("SerialDivider");
+
+    tap("div_valid", valid);
+    tap("div_stall", in.stall);
+
+    fuOutput<N, R, L> o;
+    node outputReady, issue(valid && isReady);
+
+    for (unsigned i = 0; i < L; ++i) {
+      bvec<N> n(in.r0[i]), d(Mux(in.hasimm, in.r1[i], in.imm)), q, r;
+      Serdiv(q, r, outputReady, isReady, n, d, issue, in.stall);
+      o.out[i] = Mux(Wreg(issue, in.op[0]), r, q);
+    }
+
+    tap("div_out", o.out[0]);
+    tap("div_issue", issue);
+    tap("div_ready", isReady);
+    tap("div_oready", outputReady);
+
+    o.valid = outputReady;
+    o.iid = Wreg(issue, in.iid);
+    o.didx = Wreg(issue, in.didx);
+    o.pdest = Lit(0);
+    o.wb = Wreg(issue, in.wb);
+  
+    hierarchy_exit();
+
+    return o;
+  }
+
+  virtual chdl::node ready() { return isReady; }
+ private:
+
+  chdl::node isReady;
 };
 
 #endif

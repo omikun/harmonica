@@ -391,6 +391,7 @@ int main() {
 
   pipeline.addFuncUnit(new BasicAlu<WIDTH, REGS, LANES>());
   pipeline.addFuncUnit(new PredLu<WIDTH, REGS, LANES>());
+  pipeline.addFuncUnit(new SerialDivider<WIDTH, REGS, LANES>());
   pipeline.addFuncUnit(new SramLsu<WIDTH, REGS, LANES, RAMSZ>());
 
   pipeline.generate();
