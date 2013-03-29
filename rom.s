@@ -18,8 +18,9 @@ theloop:  ld     %r3, %r0, #0
           subi   %r3, %r0, #40
           rtop   @p0, %r3
     @p0 ? jmpi   theloop
-finished: divi   %r1, %r1, #10
-          jmpi   finished
+
+          divi   %r1, %r1, #10
+finished: jmpi   finished
 
 subroutine:
           addi   %r0, %r0, #1

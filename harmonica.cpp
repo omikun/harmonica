@@ -26,7 +26,7 @@
 #include "funcunit.h"
 
 const unsigned WIDTH(32), LOG2WIDTH(CLOG2(WIDTH)), REGS(8),
-               ROMSZ(128), LOG2ROMSZ(CLOG2(ROMSZ)), RAMSZ(128), IIDBITS(6),
+               ROMSZ(128), LOG2ROMSZ(CLOG2(ROMSZ)), RAMSZ(1024), IIDBITS(6),
                LANES(4);
 
 #define DEBUG
@@ -406,7 +406,7 @@ int main() {
 
   // Do the simulation
   ofstream wave_file("harmonica.vcd");
-  run(wave_file, 2000);
+  run(wave_file, 4000);
 
   // Print the netlist
   ofstream netlist_file("harmonica.nand");

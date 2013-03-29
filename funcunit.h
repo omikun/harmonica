@@ -234,7 +234,7 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
       bvec<CLOG2(N)> memshift(Lit<CLOG2(N)>(8) *
                                 Zext<CLOG2(N)>(addr[range<0, CLOG2(N/8)-1>()]));
 
-      bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0]);
+      bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0], "rom.hex");
 
       o.out[i] = sramout >> memshift;
     }
