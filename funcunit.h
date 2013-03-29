@@ -360,11 +360,6 @@ template <unsigned N, unsigned R, unsigned L>
       o.out[i] = Mux(Wreg(issue, in.op[0]), r, q);
     }
 
-    tap("div_out", o.out[0]);
-    tap("div_issue", issue);
-    tap("div_ready", isReady);
-    tap("div_oready", outputReady);
-
     o.valid = outputReady;
     o.iid = Wreg(issue, in.iid);
     o.didx = Wreg(issue, in.didx);
