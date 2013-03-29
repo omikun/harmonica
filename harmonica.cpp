@@ -54,7 +54,8 @@ using namespace chdl;
 // asserted.
 template <unsigned LAT, unsigned N>
   bvec<N> BranchPredict
-    (node flushOut, bvec<N> pc, node stall, bvec<N> jmpPc, node takenJmp)
+    (node flushOut, bvec<N> pc, node stall, bvec<N> jmpPc,
+     node takenJmp, node predicated)
 {
   flushOut = takenJmp;
   return Mux(takenJmp, Mux(stall, pc + Lit<N>(N/8), pc), jmpPc);
@@ -87,9 +88,9 @@ template<unsigned N, unsigned R> struct harmonica {
     // // // Fetch  Unit // // //
     bvec<IIDBITS> iid;
     bvec<N> pc, jmpPc;
-    node takenJmp, validInst(GetValid(0)), brMispred;
+    node takenJmp, validInst(GetValid(0)), brMispred, hasPred;
     iid = Reg(Mux(GetStall(0), iid + Lit<IIDBITS>(1), iid));
-    pc = Reg(BranchPredict<2>(brMispred, pc, GetStall(0) || !validInst, jmpPc, takenJmp));
+    pc = Reg(BranchPredict<2>(brMispred, pc, GetStall(0) || !validInst, jmpPc, takenJmp, hasPred));
     DBGTAP(pc);
     DBGTAP(iid);
     DBGTAP(validInst);
@@ -121,6 +122,7 @@ template<unsigned N, unsigned R> struct harmonica {
     wrport<CLOG2(R), 1> prf_wr(p_wb_idx, bvec<1>(p_wb_val), p_wb);
     Regfile(prf_rd, prf_wr, "p");
 
+    hasPred = inst.has_pred();
     px = validInst_d && (!inst.has_pred() || predvalue);
 
     DBGTAP(predvalue);
