@@ -236,7 +236,16 @@ template <unsigned N, unsigned R, unsigned L, unsigned SIZE>
 
       bvec<N> sramout = Syncmem(memaddr, r0, valid && !op[0], "rom.hex");
 
-      o.out[i] = sramout >> memshift;
+      o.out[i] = sramout >> Reg(memshift);
+
+      // Simple character output from lane 0.
+      if (i == 0) {
+        node io(addr[N-1]), io_wr(valid && !op[0]),
+             char_out(io_wr && addr[range<0, N-2>()] == Lit<N-1>(0));
+        bvec<7> char_out_val(r0[range<0, 6>()]);
+        TAP(char_out);
+        TAP(char_out_val);
+      }
     }
 
     o.valid = Wreg(w, valid && op[0]);
