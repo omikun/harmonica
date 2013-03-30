@@ -130,6 +130,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     hierarchy_exit();
 
     // Fetch->Decode pipeline regs
+    bvec<N> pc_d(PipelineReg(1, pc));            DBGTAP(pc_d);
     node validInst_d(PipelineReg(1, validInst)); DBGTAP(validInst_d);
     bvec<IIDBITS> iid_d(PipelineReg(1, iid));    DBGTAP(iid_d);
 
@@ -284,7 +285,9 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(inst.is_jmp());
     node brdiv(inst.is_jmp() && OrN(px) && !AndN(px));
     takenJmp = !GetStall(1) && px[0] && inst.is_jmp();
-    jmpPc = Mux(inst.has_imm(), r0value[0], pc + inst.get_imm());
+    jmpPc = Mux(
+      inst.has_imm(), r0value[0], pc_d + inst.get_imm() + Lit<N>(N/8)
+    );
     PipelineFlush(1, brMispred);
 
     DBGTAP(brdiv);
