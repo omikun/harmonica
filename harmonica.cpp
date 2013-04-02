@@ -56,13 +56,17 @@ using namespace chdl;
 // fetch PC, this unit has to determine the next PC at which to fetch. When
 // jumps are taken and resolved, the "jmpPc" and "takenJmp" signals are
 // asserted.
+node SetClearReg(node s, node c) { return Wreg(s || c, s); }
+
 template <unsigned LAT, unsigned N>
-  bvec<N> BranchPredict
-  (node flushOut, bvec<N> pc, node stall, bvec<N> jmpPc,
-   node takenJmp, node predicated)
+  node BranchPredict
+    (bvec<N> predictPc, bvec<N> pc, bvec<N> pc_d,
+     bvec<N> jmpPc, node takenJmp, node isJmp, node predicated, node brMispred)
 {
-  flushOut = takenJmp;
-  return Mux(takenJmp, Mux(stall, pc + Lit<N>(N/8), pc), jmpPc);
+  bvec<N> prevJmpPc(Wreg(takenJmp, pc_d)), prevJmpDest(Wreg(takenJmp, jmpPc));
+  node prevJmpValid(SetClearReg(takenJmp, brMispred && !takenJmp));
+  predictPc = prevJmpDest;
+  return pc == prevJmpPc && prevJmpValid;
 }
 #endif
 
@@ -112,17 +116,23 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     hierarchy_enter("FetchUnit");
 
     bvec<IIDBITS> iid;
-    bvec<N> pc, jmpPc;
+    bvec<N> pc, pc_d, jmpPc, predictedPc;
     node takenJmp, validInst(GetValid(0)), brMispred,
-        bpStall(GetStall(0) || !validInst), hasPred;
+      bpStall(GetStall(0) || !validInst), hasPred, predictTaken, isJmp;
+    predictTaken =
+      BranchPredict<2>
+        (predictedPc, pc, pc_d, jmpPc, takenJmp, isJmp, hasPred, brMispred);
     iid = Reg(Mux(GetStall(0), iid + Lit<IIDBITS>(1), iid));
-    pc = Reg(
-      BranchPredict<2>(brMispred, pc, bpStall, jmpPc, takenJmp, hasPred)
-    );
+    pc = Wreg(!bpStall || brMispred/*takenJmp*/,
+              Mux(brMispred,
+                    Mux(predictTaken, pc + Lit<N>(N/8), predictedPc),
+                    Mux(takenJmp, pc_d + Lit<N>(N/8), jmpPc)));
     DBGTAP(pc);
     DBGTAP(iid);
     DBGTAP(validInst);
     DBGTAP(brMispred);
+    DBGTAP(predictTaken);
+    DBGTAP(jmpPc);
 
     bvec<N> ir(InstructionMemory(pc));
     DBGTAP(ir);
@@ -130,7 +140,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     hierarchy_exit();
 
     // Fetch->Decode pipeline regs
-    bvec<N> pc_d(PipelineReg(1, pc));            DBGTAP(pc_d);
+    pc_d = PipelineReg(1, pc);                   DBGTAP(pc_d);
     node validInst_d(PipelineReg(1, validInst)); DBGTAP(validInst_d);
     bvec<IIDBITS> iid_d(PipelineReg(1, iid));    DBGTAP(iid_d);
 
@@ -282,9 +292,9 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
     DBGTAP(fustall);
 
     // Determine taken jump
-    DBGTAP(inst.is_jmp());
-    node brdiv(inst.is_jmp() && OrN(px) && !AndN(px));
-    takenJmp = !GetStall(1) && px[0] && inst.is_jmp();
+    isJmp = inst.is_jmp() && !GetStall(1); DBGTAP(isJmp);
+    node brdiv(isJmp && OrN(px) && !AndN(px));
+    takenJmp = !GetStall(1) && px[0] && isJmp;
     jmpPc = Mux(
       inst.has_imm(), r0value[0], pc_d + inst.get_imm() + Lit<N>(N/8)
     );
@@ -292,6 +302,10 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     DBGTAP(brdiv);
     DBGTAP(takenJmp);
+
+    brMispred = !GetStall(1) && 
+                  validInst_d && ((takenJmp && jmpPc != pc) ||
+                                   (!takenJmp && pc != pc_d + Lit<N>(N/8)));
 
     // // // Functional Units // // //
     // Decide at the decode stage which functional unit is producing the result.
@@ -324,9 +338,8 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
 
     // Count in-flight operations (operations in flight in the execution units)
     node inc_ifo(PipelineReg(2, validInst_d && !inst.is_store() &&
-                                (!inst.is_jmp() ||
-                                  inst.get_opcode() == Lit<6>(0x1b) ||
-                                  inst.get_opcode() == Lit<6>(0x1c)))),
+                                (!isJmp || inst.get_opcode() == Lit<6>(0x1b) ||
+                                           inst.get_opcode() == Lit<6>(0x1c)))),
          dec_ifo;
     bvec<IIDBITS> ifo;
     vec<4, bvec<IIDBITS>> ifo_in;
