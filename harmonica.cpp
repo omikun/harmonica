@@ -123,7 +123,7 @@ template<unsigned N, unsigned R, unsigned L> struct harmonica {
       BranchPredict<2>
         (predictedPc, pc, pc_d, jmpPc, takenJmp, isJmp, hasPred, brMispred);
     iid = Reg(Mux(GetStall(0), iid + Lit<IIDBITS>(1), iid));
-    pc = Wreg(!bpStall || brMispred/*takenJmp*/,
+    pc = Wreg(!bpStall || brMispred,
               Mux(brMispred,
                     Mux(predictTaken, pc + Lit<N>(N/8), predictedPc),
                     Mux(takenJmp, pc_d + Lit<N>(N/8), jmpPc)));
