@@ -1,0 +1,39 @@
+\begin{document}
+\section{Load Store Unit}
+The load store unit accepts memory requests in order and may issue them to the memory system out of order and write loaded memory value back to register out of order. It is parameterized and can handle variable number of lanes, queue size, address and data sizes. The address is organized as follows from the least significant to the most significant bits: byte offset within a word, lane offset. 
+
+The load store unit can be divided into four components:
+\begin{itemize}
+  \item Front end
+  \item Load queue
+  \item Store queue
+  \item Forwarding and Hazard Logic
+  \item Commit Logic
+\end{itemize}
+
+The front end, load queue and store queue requires a single cycle. There also exists bypass logic for the front end and load queue in the memory bound direction.
+
+\subsection{Front end}
+The front end intercepts multiple streams of memory requests per memory instruction. It attempts to coalesce into fewer memory requests to the memory system. It first loads the incoming memory requests into temporary registers called feAddress. A non-predicated memory address is selected for insertion in to a load or store queue, based on the request type. This memory address is then compared against the upper bits of all other valid feAddresses for coalescing. Lane offsets are masked off for this comparison. Matching addresses will have their lane offset inserted into the same entry of the load or store queue. Additionally, matching addresses will have their valid flags cleared. The queue entry that receives the first address insertion of a memory instruction has its leader flag set, to be used for receiving data from the memory system. All non-leader queue entries will store the queue id of the leader. In the case of a fully coalesced access, all feAddresses will be cleared after one cycle and only one queue entry is used, it will be designated as a leader.
+
+To avoid the one cycle latency in storing incoming addresses into a register, the selection and coalescing logic is replicated for the input addresses. This way at least one address would be issued to the load or store queue without delay. In a fully coalesced access, the feAddress registers are bypassed entirely.
+
+\subsection{Load Queue}
+The load queue does not guarantee in-order memory issue or in-order write-back. It finds a free entry and stores the next available memory address and its offsets in that entry. This is acheived by using a priority encoder on a bit vector of free flags. The result is then decoded to drive write enable on the selected free entry. Selecting an entry to send to the memory interface uses a similar mechanism with the pending flag, which is set on insertion and cleared when selected. A unique loaded flag indicates the status of the data register particular to a lane. 
+
+When the data returns from the memory system, it is sent to the leader entry of the load queue. If the returning queue id is to a non-leader queue entry, it will find the leader and store the data to the leader queue entry. Each non-leader queue entry stores a pointer to its leader. When all valid lanes are loaded, the entry can be written back to architectural registers.
+
+To avoid the one cycle latency to the memory interface, a bypass logic is used to route the insertion address to the memory interface. No bypass mechanism for the write-back route is implemented
+
+\subsection{Store Queue}
+The store queue must commit stores in order, so a head and tail pointer is used to keep track of insertion and ejection positions. Each store queue entry also keeps track of one dependent load entry. Multiple dependent load entries are not supported at the moment. All offsets within a store queue are assumed to be in consecutive order. All lanes of the same instruction are assumed to store to consecutive locations within a l*word boundary. No bypass mechanism is used with this structure.
+
+\subsection{Fowarding and Hazard Logic}
+This logic examines incoming requests and checks for matching addresses in both load and store queues. If the request is a store, matching stores will be invalidated and matching loads are recorded so the store must wait on it. The WAR detection is conservative, where only the address is used in the comparison, and the offsets are ignored. If the request is a load, no RAR detection is made, but RAW detection is implemented, and the appropriate lanes will forward data from the store queue to the load queue. 
+
+There are three possible outputs to the memory interface: load queue, store queue, and load queue bypass. If the load queue is empty, with no pending requests, the load queue bypass is selected. The by pass is disabled if load queue has pending requests. The store queue is selected if there are no pending load requests or the store queue is full. 
+
+\subsection{Commit Logic}
+The commit logic selects a load queue entry with all data registers loaded. It is up to the write back logic outside of the load store unit to decide whether the result will be written to its destination register based on the instruction identifier.
+
+\end{document}
